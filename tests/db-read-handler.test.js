@@ -171,3 +171,55 @@ test("dbRead applies target-aware anonymization when the target policy requires 
   assert.equal(result.structuredContent.anonymization_provider, "lmstudio");
   assert.deepEqual(result.structuredContent.rows, [{ name: "Nome Anonimo" }]);
 });
+
+test("dbRead emits query_in and query_out events for dashboard inspection", async () => {
+  const events = [];
+
+  const handlers = createHandlers({
+    targetRegistry: createTestRegistry(),
+    env: {
+      DB_PROD_MAIN_CONNECTION_STRING: "Server=.;Database=Prod;Trusted_Connection=True;"
+    },
+    providerConfig: {
+      lmstudioBaseUrl: "http://127.0.0.1:1234/v1",
+      ollamaBaseUrl: "http://127.0.0.1:11434",
+      fieldIdentification: "hybrid",
+      hashSalt: "secret-1234567890-XYZ!",
+      failOpen: false,
+      timeoutMs: 5000
+    },
+    executeSqlRead: async () => ({
+      columns: [{ name: "name", nullable: true, type: "NVarChar" }],
+      rows: [{ name: "Mario Rossi" }],
+      row_count: 1,
+      total_rows_before_limits: 1,
+      max_rows_applied: 5,
+      max_result_bytes_applied: 1024,
+      result_bytes: 24,
+      truncated: false,
+      duration_ms: 1
+    }),
+    anonymizeQueryResult: async ({ queryResult }) => ({
+      ...queryResult,
+      rows: [{ name: "Nome Anonimo" }],
+      anonymization_applied: true,
+      anonymization_provider: "lmstudio",
+      anonymization_mode: "hybrid"
+    }),
+    logDbEvent: (event, payload) => {
+      events.push({ event, payload });
+    }
+  });
+
+  await handlers.dbRead({
+    target_id: "prod-main",
+    sql: "SELECT name FROM dbo.Users"
+  });
+
+  assert.equal(events.length, 2);
+  assert.equal(events[0].event, "query_in");
+  assert.equal(events[0].payload.tool, "db_read");
+  assert.equal(events[1].event, "query_out");
+  assert.equal(events[1].payload.rowCount, 1);
+  assert.equal(events[1].payload.response.anonymizationApplied, true);
+});

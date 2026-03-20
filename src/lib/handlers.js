@@ -61,7 +61,8 @@ export function createHandlers({
   executeSqlRead,
   anonymizeQueryResult,
   providerConfig,
-  fetchImpl = globalThis.fetch
+  fetchImpl = globalThis.fetch,
+  logDbEvent = null
 }) {
   return {
     async dbTargetList() {
@@ -131,11 +132,19 @@ export function createHandlers({
 
       try {
         const connectionString = getConnectionString(target, env);
+        const effectiveMaxRows = resolveEffectiveMaxRows(requestedMaxRows, target.max_rows);
+        logDbEvent?.("query_in", {
+          tool: "db_read",
+          target_id: target.target_id,
+          sql: normalizedSql,
+          parameters,
+          maxRows: effectiveMaxRows
+        });
         const result = await executeSqlRead({
           connectionString,
           sqlText: normalizedSql,
           parameters,
-          maxRows: resolveEffectiveMaxRows(requestedMaxRows, target.max_rows),
+          maxRows: effectiveMaxRows,
           maxResultBytes: target.max_result_bytes
         });
 
@@ -156,6 +165,25 @@ export function createHandlers({
               anonymization_provider: "none",
               anonymization_mode: target.anonymization_mode
             };
+
+        logDbEvent?.("query_out", {
+          tool: "db_read",
+          target_id: target.target_id,
+          rowCount: finalResult.row_count,
+          truncated: finalResult.truncated,
+          anonymizationApplied: finalResult.anonymization_applied,
+          anonymizationProvider: finalResult.anonymization_provider,
+          anonymizationMode: finalResult.anonymization_mode,
+          response: {
+            success: true,
+            rowCount: finalResult.row_count,
+            truncated: finalResult.truncated,
+            anonymizationApplied: finalResult.anonymization_applied,
+            anonymizationProvider: finalResult.anonymization_provider,
+            anonymizationMode: finalResult.anonymization_mode,
+            rows: finalResult.rows
+          }
+        });
 
         return createJsonResult({
           target_id: target.target_id,
