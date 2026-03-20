@@ -53,6 +53,19 @@ function parseOrigins(value) {
     .filter(Boolean);
 }
 
+function parseEnum(value, allowed, fallback, label) {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  if (allowed.includes(normalized)) {
+    return normalized;
+  }
+
+  throw new Error(`${label} must be one of: ${allowed.join(", ")}.`);
+}
+
 function assertNoForbiddenSecretsInDotEnv(envPath) {
   if (!fs.existsSync(envPath)) {
     return;
@@ -104,6 +117,11 @@ export function loadRuntimeConfig({ cwd = process.cwd(), env = process.env } = {
     throw new Error("SESSION_SWEEP_INTERVAL_MS must be greater than zero.");
   }
 
+  const anonymizerTimeoutMs = parseInteger(env.ANON_TIMEOUT_MS, 5000, "ANON_TIMEOUT_MS");
+  if (anonymizerTimeoutMs <= 0) {
+    throw new Error("ANON_TIMEOUT_MS must be greater than zero.");
+  }
+
   return {
     serverName: "llm-sql-db-mcp",
     serverVersion: "0.1.0",
@@ -119,7 +137,16 @@ export function loadRuntimeConfig({ cwd = process.cwd(), env = process.env } = {
     logLevel: env.LOG_LEVEL ?? "info",
     providers: {
       lmstudioBaseUrl: env.LMSTUDIO_BASE_URL ?? "http://127.0.0.1:1234/v1",
-      ollamaBaseUrl: env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434"
+      ollamaBaseUrl: env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434",
+      fieldIdentification: parseEnum(
+        env.ANON_FIELD_IDENTIFICATION,
+        ["hybrid", "heuristic", "llm"],
+        "hybrid",
+        "ANON_FIELD_IDENTIFICATION"
+      ),
+      hashSalt: env.ANON_HASH_SALT ?? "",
+      failOpen: parseBoolean(env.ANON_FAIL_OPEN, false),
+      timeoutMs: anonymizerTimeoutMs
     }
   };
 }

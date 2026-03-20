@@ -142,12 +142,16 @@ export function createHandlers({
         const finalResult = policy.anonymization_required
           ? await anonymizeQueryResult({
               target,
-              queryResult: result,
+              queryResult: {
+                ...result,
+                sql_text: normalizedSql
+              },
               providerConfig,
               fetchImpl
             })
           : {
               ...result,
+              sql_text: normalizedSql,
               anonymization_applied: false,
               anonymization_provider: "none",
               anonymization_mode: target.anonymization_mode
