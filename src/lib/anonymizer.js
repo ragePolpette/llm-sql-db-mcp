@@ -1,74 +1,16 @@
-import { anonymizeWithLmStudio } from "./providers/lmstudio.js";
-import { anonymizeWithOllama } from "./providers/ollama.js";
+import {
+  anonymizeRows,
+  extractJsonFromText,
+  parseProviderJson,
+  __anonymizationCoreTestUtils
+} from "./anonymization/core.js";
 
-function extractJsonCandidate(text) {
-  const trimmed = text.trim();
-  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fencedMatch) {
-    return fencedMatch[1].trim();
+function normalizeMode(mode) {
+  const value = String(mode || "hybrid").trim().toLowerCase();
+  if (value === "direct") {
+    return "llm-strict";
   }
-
-  return trimmed;
-}
-
-export function parseProviderJson(text) {
-  const candidate = extractJsonCandidate(text);
-
-  try {
-    return JSON.parse(candidate);
-  } catch {
-    const firstBrace = candidate.indexOf("{");
-    const lastBrace = candidate.lastIndexOf("}");
-    if (firstBrace >= 0 && lastBrace > firstBrace) {
-      return JSON.parse(candidate.slice(firstBrace, lastBrace + 1));
-    }
-
-    const firstBracket = candidate.indexOf("[");
-    const lastBracket = candidate.lastIndexOf("]");
-    if (firstBracket >= 0 && lastBracket > firstBracket) {
-      return JSON.parse(candidate.slice(firstBracket, lastBracket + 1));
-    }
-
-    throw new Error("Provider response did not contain valid JSON.");
-  }
-}
-
-function extractRowsFromProviderPayload(payload) {
-  if (Array.isArray(payload)) {
-    return payload;
-  }
-
-  if (Array.isArray(payload?.rows)) {
-    return payload.rows;
-  }
-
-  if (Array.isArray(payload?.data?.rows)) {
-    return payload.data.rows;
-  }
-
-  throw new Error("Provider response JSON must contain a rows array.");
-}
-
-function ensureRowObjects(rows) {
-  if (!rows.every(row => row && typeof row === "object" && !Array.isArray(row))) {
-    throw new Error("Provider rows must be objects.");
-  }
-
-  return rows;
-}
-
-function buildPrompts({ target, queryResult }) {
-  return {
-    systemPrompt:
-      "You anonymize SQL query rows. Return JSON only. Preserve the same array length and the same object keys for each row. Replace personal or sensitive values with realistic but fictitious equivalents. Keep technical IDs non-sensitive when they are clearly synthetic.",
-    userPrompt: JSON.stringify({
-      task: "anonymize_query_rows",
-      target_id: target.target_id,
-      anonymization_mode: target.anonymization_mode,
-      columns: queryResult.columns,
-      rows: queryResult.rows
-    })
-  };
+  return value;
 }
 
 function computeRowsByteLength(rows) {
@@ -90,6 +32,26 @@ function clampRowsToByteLimit(rows, maxResultBytes) {
   return acceptedRows;
 }
 
+function buildAnonymizerConfig(target, providerConfig) {
+  const provider = String(target.llm_provider || "none").toLowerCase();
+  const baseUrl = provider === "lmstudio"
+    ? providerConfig.lmstudioBaseUrl
+    : provider === "ollama"
+      ? providerConfig.ollamaBaseUrl
+      : "";
+
+  return {
+    provider,
+    mode: normalizeMode(target.anonymization_mode),
+    fieldIdentification: providerConfig.fieldIdentification,
+    hashSalt: providerConfig.hashSalt,
+    failOpen: providerConfig.failOpen,
+    timeoutMs: providerConfig.timeoutMs,
+    model: target.llm_model,
+    baseUrl
+  };
+}
+
 export async function anonymizeQueryResult({
   target,
   queryResult,
@@ -105,41 +67,28 @@ export async function anonymizeQueryResult({
     };
   }
 
-  const prompts = buildPrompts({ target, queryResult });
-  let providerText;
-
-  if (target.llm_provider === "lmstudio") {
-    providerText = await anonymizeWithLmStudio({
-      baseUrl: providerConfig.lmstudioBaseUrl,
-      model: target.llm_model,
-      fetchImpl,
-      ...prompts
-    });
-  } else if (target.llm_provider === "ollama") {
-    providerText = await anonymizeWithOllama({
-      baseUrl: providerConfig.ollamaBaseUrl,
-      model: target.llm_model,
-      fetchImpl,
-      ...prompts
-    });
-  } else if (target.llm_provider === "none") {
-    throw new Error(`Target "${target.target_id}" requires anonymization but provider is "none".`);
-  } else {
-    throw new Error(`Unsupported anonymization provider: ${target.llm_provider}`);
-  }
-
-  const parsed = parseProviderJson(providerText);
-  const parsedRows = ensureRowObjects(extractRowsFromProviderPayload(parsed));
-  const boundedRows = clampRowsToByteLimit(parsedRows, queryResult.max_result_bytes_applied);
+  const anonymizerConfig = buildAnonymizerConfig(target, providerConfig);
+  const maskedRows = await anonymizeRows(queryResult.rows, anonymizerConfig, {
+    sqlText: queryResult.sql_text,
+    fetchImpl
+  });
+  const boundedRows = clampRowsToByteLimit(maskedRows, queryResult.max_result_bytes_applied);
 
   return {
     ...queryResult,
     rows: boundedRows,
     row_count: boundedRows.length,
     result_bytes: computeRowsByteLength(boundedRows),
-    truncated: queryResult.truncated || boundedRows.length < parsedRows.length,
+    truncated: queryResult.truncated || boundedRows.length < maskedRows.length,
     anonymization_applied: true,
     anonymization_provider: target.llm_provider,
-    anonymization_mode: target.anonymization_mode
+    anonymization_mode: normalizeMode(target.anonymization_mode)
   };
 }
+
+export {
+  anonymizeRows,
+  extractJsonFromText,
+  parseProviderJson,
+  __anonymizationCoreTestUtils
+};
