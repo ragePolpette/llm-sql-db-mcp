@@ -109,4 +109,54 @@ export function registerFixedTools(server, handlers) {
     },
     handlers.dbPolicyInfo
   );
+
+  server.registerTool(
+    "db_read",
+    {
+      title: "Execute Read-Only SQL",
+      description: "Execute a read-only SQL Server query for a specific target_id. Only SELECT statements and read-safe CTEs are allowed.",
+      inputSchema: {
+        target_id: z.string().min(1).describe("Target identifier to query."),
+        sql: z.string().min(1).describe("Read-only SQL text. Write, DDL, and multi-statement input is rejected."),
+        parameters: z
+          .record(
+            z.string(),
+            z.union([z.string(), z.number(), z.boolean(), z.null()])
+          )
+          .optional()
+          .describe("Optional named SQL parameters."),
+        max_rows: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Optional row cap. The server clamps it to the target limit.")
+      },
+      outputSchema: {
+        target_id: z.string(),
+        sql: z.string(),
+        anonymization_applied: z.boolean(),
+        columns: z.array(
+          z.object({
+            name: z.string(),
+            nullable: z.boolean(),
+            type: z.string()
+          })
+        ),
+        rows: z.array(z.record(z.string(), z.unknown())),
+        row_count: z.number().int().nonnegative(),
+        total_rows_before_limits: z.number().int().nonnegative(),
+        max_rows_applied: z.number().int().positive(),
+        max_result_bytes_applied: z.number().int().positive(),
+        result_bytes: z.number().int().nonnegative(),
+        truncated: z.boolean(),
+        duration_ms: z.number().int().nonnegative()
+      },
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false
+      }
+    },
+    handlers.dbRead
+  );
 }
