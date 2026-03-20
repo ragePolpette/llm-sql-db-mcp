@@ -7,15 +7,13 @@ MCP server HTTP stateful che espone una surface SQL fissa e policy-driven su piu
 Supportato:
 - SQL Server soltanto
 - target multipli via `targets.json`
-- tool MCP fissi: `db_target_list`, `db_target_info`, `db_policy_info`, `db_read`
+- tool MCP fissi: `db_target_list`, `db_target_info`, `db_policy_info`, `db_read`, `db_write`
 - policy target-aware
 - anonimizzazione target-aware con pipeline deterministica riusabile
 - provider `lmstudio` e `ollama` usati per identificazione campi sensibili dove richiesto
 
 Non supportato:
-- write tools
 - MySQL
-- dashboard integration
 - provisioning UI
 
 ## Requisiti
@@ -79,6 +77,7 @@ Override runtime per target:
 - esempio per `prod-main`: `TARGET_PROD_MAIN_...`
 - campi supportati:
   - `READ_ENABLED`
+  - `WRITE_ENABLED`
   - `ANONYMIZATION_ENABLED`
   - `ANONYMIZATION_MODE`
   - `LLM_PROVIDER`
@@ -150,6 +149,32 @@ Regole:
 - se il target richiede anonimizzazione, applica masking deterministico sui valori
 - il provider configurato non riscrive il result set: viene usato per classificare i campi quando la strategia lo richiede
 - se la query e il target lo consentono, la forma del result set viene preservata
+
+### `db_write`
+
+Input:
+- `target_id`
+- `sql`
+- `parameters` opzionale
+
+Regole:
+- il tool esiste sempre nella surface MCP, ma viene permesso solo se `write_enabled=true` per il target
+- supporta solo statement di write controllati:
+  - `INSERT`
+  - `UPDATE`
+  - `DELETE`
+  - `MERGE`
+  - write CTE che terminano in una di queste operazioni
+- continua a bloccare anche in modalita write:
+  - `DROP`
+  - `ALTER`
+  - `CREATE`
+  - `TRUNCATE`
+  - `EXEC`
+  - `EXECUTE`
+  - multi-statement
+  - `SELECT INTO`
+- non applica anonimizzazione all'output
 
 ## Test
 

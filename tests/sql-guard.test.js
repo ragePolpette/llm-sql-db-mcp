@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { assertReadSafeSql, inspectSqlSafety } from "../src/lib/sql-guard.js";
+import {
+  assertReadSafeSql,
+  assertWriteSafeSql,
+  inspectSqlSafety,
+  inspectWriteSafety
+} from "../src/lib/sql-guard.js";
 
 test("sql guard allows plain select", () => {
   const result = inspectSqlSafety("SELECT id, name FROM dbo.Users");
@@ -50,4 +55,31 @@ test("sql guard rejects multiple statements", () => {
   const result = inspectSqlSafety("SELECT 1; SELECT 2");
   assert.equal(result.allowed, false);
   assert.match(result.reason, /Multiple SQL statements/i);
+});
+
+test("write guard allows update statements", () => {
+  const sql = "UPDATE dbo.Users SET status = 'OPEN' WHERE id = 1";
+  const result = inspectWriteSafety(sql);
+  assert.equal(result.allowed, true);
+  assert.equal(assertWriteSafeSql(sql), sql);
+});
+
+test("write guard rejects ddl and exec", () => {
+  const ddl = inspectWriteSafety("DROP TABLE dbo.Users");
+  assert.equal(ddl.allowed, false);
+  assert.match(ddl.reason, /Only INSERT|Forbidden SQL keyword/i);
+
+  const exec = inspectWriteSafety("EXEC dbo.DoThing");
+  assert.equal(exec.allowed, false);
+  assert.match(exec.reason, /Only INSERT|Forbidden SQL keyword/i);
+});
+
+test("write guard rejects multiple statements and select into", () => {
+  const multi = inspectWriteSafety("UPDATE dbo.Users SET status = 'OPEN'; DELETE FROM dbo.Users");
+  assert.equal(multi.allowed, false);
+  assert.match(multi.reason, /Multiple SQL statements/i);
+
+  const selectInto = inspectWriteSafety("WITH x AS (SELECT 1 AS id) SELECT * INTO #tmp FROM x");
+  assert.equal(selectInto.allowed, false);
+  assert.match(selectInto.reason, /SELECT INTO|Write CTEs must resolve/i);
 });

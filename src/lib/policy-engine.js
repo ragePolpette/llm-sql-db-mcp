@@ -1,4 +1,4 @@
-const TARGET_SCOPED_TOOLS = ["db_target_info", "db_policy_info", "db_read"];
+const TARGET_SCOPED_TOOLS = ["db_target_info", "db_policy_info", "db_read", "db_write"];
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -89,6 +89,15 @@ export function evaluateToolPolicy({ target, toolName }) {
       allowed: false,
       anonymization_required: false,
       denial_reason: `Read access is disabled for target "${target.target_id}".`
+    };
+  }
+
+  if (normalizedToolName === "db_write" && !target.write_enabled) {
+    return {
+      tool_name: normalizedToolName,
+      allowed: false,
+      anonymization_required: false,
+      denial_reason: `Write access is disabled for target "${target.target_id}".`
     };
   }
 
