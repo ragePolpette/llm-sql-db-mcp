@@ -25,6 +25,19 @@ function createProtocolErrorResponse(res, status, message) {
   });
 }
 
+function safeJson(value) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return JSON.stringify({ error: "serialization_failed" });
+  }
+}
+
+function logDbEvent(event, payload) {
+  const timestamp = new Date().toISOString();
+  process.stdout.write(`[DB_SQL_MCP] ${timestamp} ${event} ${safeJson(payload)}\n`);
+}
+
 function buildMcpServer(config, dependencies) {
   const server = new McpServer({
     name: config.serverName,
@@ -45,7 +58,7 @@ async function safeCloseTransport(transport, sessionId) {
 
 export async function createApp({ cwd = process.cwd() } = {}) {
   const config = loadRuntimeConfig({ cwd });
-  const targetRegistry = await loadTargetRegistry(config.targetsFile);
+  const targetRegistry = await loadTargetRegistry(config.targetsFile, { env: process.env });
   const app = createMcpExpressApp();
   const sessionStore = new SessionStore({
     defaultTtlMs: config.sessionTtlMs
@@ -99,7 +112,8 @@ export async function createApp({ cwd = process.cwd() } = {}) {
       env: process.env,
       executeSqlRead: executeSqlServerRead,
       anonymizeQueryResult,
-      providerConfig: config.providers
+      providerConfig: config.providers,
+      logDbEvent
     });
     let transport;
 

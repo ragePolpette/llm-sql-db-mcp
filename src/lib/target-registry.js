@@ -75,6 +75,67 @@ function ensureUniqueTargetIds(targets) {
   }
 }
 
+function normalizeTargetEnvPrefix(targetId) {
+  return `TARGET_${String(targetId || "")
+    .trim()
+    .replace(/[^A-Za-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toUpperCase()}`;
+}
+
+function parseBooleanOverride(value, label) {
+  const normalized = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  throw new Error(`${label} must be a boolean value.`);
+}
+
+function applyTargetEnvOverrides(target, env) {
+  const prefix = normalizeTargetEnvPrefix(target.target_id);
+  const nextTarget = { ...target };
+
+  const readEnabled = env[`${prefix}_READ_ENABLED`];
+  if (readEnabled !== undefined && readEnabled !== "") {
+    nextTarget.read_enabled = parseBooleanOverride(readEnabled, `${prefix}_READ_ENABLED`);
+  }
+
+  const anonymizationEnabled = env[`${prefix}_ANONYMIZATION_ENABLED`];
+  if (anonymizationEnabled !== undefined && anonymizationEnabled !== "") {
+    nextTarget.anonymization_enabled = parseBooleanOverride(
+      anonymizationEnabled,
+      `${prefix}_ANONYMIZATION_ENABLED`
+    );
+    if (!nextTarget.anonymization_enabled) {
+      nextTarget.anonymization_mode = "off";
+      nextTarget.llm_provider = "none";
+      nextTarget.llm_model = "";
+    }
+  }
+
+  const anonymizationMode = env[`${prefix}_ANONYMIZATION_MODE`];
+  if (anonymizationMode !== undefined && anonymizationMode !== "") {
+    nextTarget.anonymization_mode = String(anonymizationMode).trim().toLowerCase();
+  }
+
+  const provider = env[`${prefix}_LLM_PROVIDER`];
+  if (provider !== undefined && provider !== "") {
+    nextTarget.llm_provider = String(provider).trim().toLowerCase();
+  }
+
+  const model = env[`${prefix}_LLM_MODEL`];
+  if (model !== undefined) {
+    nextTarget.llm_model = String(model).trim();
+  }
+
+  if (!nextTarget.anonymization_enabled) {
+    nextTarget.anonymization_mode = "off";
+    nextTarget.llm_provider = "none";
+    nextTarget.llm_model = "";
+  }
+
+  return nextTarget;
+}
+
 export class TargetRegistry {
   #targets;
   #targetMap;
@@ -108,7 +169,7 @@ export class TargetRegistry {
   }
 }
 
-export async function loadTargetRegistry(targetsFilePath) {
+export async function loadTargetRegistry(targetsFilePath, { env = process.env } = {}) {
   let rawFile;
   try {
     rawFile = await fs.readFile(targetsFilePath, "utf8");
@@ -123,7 +184,14 @@ export async function loadTargetRegistry(targetsFilePath) {
     throw new Error(`targets.json is not valid JSON: ${error.message}`);
   }
 
-  const parsed = targetsFileSchema.safeParse(parsedJson);
+  const rawTargets = Array.isArray(parsedJson?.targets)
+    ? parsedJson.targets.map(target => applyTargetEnvOverrides(target, env))
+    : parsedJson?.targets;
+
+  const parsed = targetsFileSchema.safeParse({
+    ...parsedJson,
+    targets: rawTargets
+  });
   if (!parsed.success) {
     throw new Error(`Invalid targets configuration: ${parsed.error.message}`);
   }
