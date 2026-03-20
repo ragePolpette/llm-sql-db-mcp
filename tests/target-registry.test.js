@@ -85,3 +85,48 @@ test("loadTargetRegistry rejects duplicate target ids", async () => {
     /Duplicate target_id/i
   );
 });
+
+test("loadTargetRegistry accepts deterministic and llm-strict anonymization modes", async () => {
+  const filePath = writeTempTargetsFile({
+    targets: [
+      {
+        target_id: "prod-det",
+        display_name: "Prod Deterministic",
+        environment: "prod",
+        db_kind: "sqlserver",
+        status: "active",
+        connection_env_var: "DB_PROD_DET_CONNECTION_STRING",
+        read_enabled: true,
+        write_enabled: false,
+        anonymization_enabled: true,
+        anonymization_mode: "deterministic",
+        llm_provider: "lmstudio",
+        llm_model: "gemma",
+        max_rows: 100,
+        max_result_bytes: 1024,
+        allowed_tools: ["db_target_info", "db_policy_info", "db_read"]
+      },
+      {
+        target_id: "prod-strict",
+        display_name: "Prod Strict",
+        environment: "prod",
+        db_kind: "sqlserver",
+        status: "active",
+        connection_env_var: "DB_PROD_STRICT_CONNECTION_STRING",
+        read_enabled: true,
+        write_enabled: false,
+        anonymization_enabled: true,
+        anonymization_mode: "llm-strict",
+        llm_provider: "ollama",
+        llm_model: "gemma3:4b",
+        max_rows: 100,
+        max_result_bytes: 1024,
+        allowed_tools: ["db_target_info", "db_policy_info", "db_read"]
+      }
+    ]
+  });
+
+  const registry = await loadTargetRegistry(filePath);
+  assert.equal(registry.get("prod-det").anonymization_mode, "deterministic");
+  assert.equal(registry.get("prod-strict").anonymization_mode, "llm-strict");
+});

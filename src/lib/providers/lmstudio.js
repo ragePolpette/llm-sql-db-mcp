@@ -7,8 +7,14 @@ export async function anonymizeWithLmStudio({
   model,
   systemPrompt,
   userPrompt,
-  fetchImpl
+  fetchImpl,
+  timeoutMs
 }) {
+  const controller = typeof AbortController === "function" && timeoutMs ? new AbortController() : null;
+  const timeout = controller
+    ? setTimeout(() => controller.abort("timeout"), timeoutMs)
+    : null;
+
   let response;
   try {
     response = await fetchImpl(buildUrl(baseUrl, "chat/completions"), {
@@ -32,10 +38,18 @@ export async function anonymizeWithLmStudio({
             content: userPrompt
           }
         ]
-      })
+      }),
+      signal: controller?.signal
     });
   } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`LM Studio provider request timed out after ${timeoutMs}ms.`);
+    }
     throw new Error(`LM Studio provider request failed: ${error.message}`);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
   }
 
   if (!response.ok) {

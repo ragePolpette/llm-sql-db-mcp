@@ -9,7 +9,8 @@ Supportato:
 - target multipli via `targets.json`
 - tool MCP fissi: `db_target_list`, `db_target_info`, `db_policy_info`, `db_read`
 - policy target-aware
-- anonimizzazione target-aware con provider `lmstudio`, `ollama`, `none`
+- anonimizzazione target-aware con pipeline deterministica riusabile
+- provider `lmstudio` e `ollama` usati per identificazione campi sensibili dove richiesto
 
 Non supportato:
 - write tools
@@ -68,6 +69,10 @@ Variabili principali:
 - `ALLOWED_ORIGINS`: lista CSV di origin consentiti
 - `LMSTUDIO_BASE_URL`: default `http://127.0.0.1:1234/v1`
 - `OLLAMA_BASE_URL`: default `http://127.0.0.1:11434`
+- `ANON_FIELD_IDENTIFICATION`: `hybrid`, `heuristic`, `llm`
+- `ANON_HASH_SALT`: secret stabile usato per il masking deterministico
+- `ANON_FAIL_OPEN`: se `true`, in `llm-strict` non blocca la query quando l'identificazione LLM fallisce
+- `ANON_TIMEOUT_MS`: timeout delle chiamate provider per identificazione campi
 
 Regola importante:
 - non mettere connection string, API key, password o secret nel file `.env` del progetto; il loader le rifiuta esplicitamente
@@ -81,6 +86,15 @@ Il server legge i target da [targets.json](/C:/Users/Gianmarco/Urgewalt/Yetzirah
 - limiti read-only
 - allowed tools
 - configurazione anonimizzazione
+
+Mode supportati:
+- `off`
+- `deterministic`
+- `hybrid`
+- `llm-strict`
+
+Nota:
+- `direct` resta accettato come alias legacy ma viene trattato come `llm-strict`
 
 ## Tool MCP
 
@@ -123,7 +137,9 @@ Regole:
 - rifiuta keyword write/DDL e multi-statement
 - usa solo SQL Server
 - applica `max_rows` e `max_result_bytes`
-- se il target richiede anonimizzazione, passa il result set al provider configurato
+- se il target richiede anonimizzazione, applica masking deterministico sui valori
+- il provider configurato non riscrive il result set: viene usato per classificare i campi quando la strategia lo richiede
+- se la query e il target lo consentono, la forma del result set viene preservata
 
 ## Test
 
@@ -144,6 +160,7 @@ La suite copre:
 - target registry
 - policy engine
 - sql guard
+- anonymization core deterministico + classificazione field-aware
 - handler `db_read`
 - parsing provider
 - integration test MCP HTTP per health/tool surface/tool call

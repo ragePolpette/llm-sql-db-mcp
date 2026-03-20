@@ -86,6 +86,7 @@ test("dbRead rejects unsafe sql before executing the driver", async () => {
 });
 
 test("dbRead normalizes the handler response and clamps max_rows", async () => {
+  const originalSql = "SELECT id FROM dbo.Users WHERE status = 'OPEN'";
   const handlers = createHandlers({
     targetRegistry: createTestRegistry(),
     env: {
@@ -94,7 +95,7 @@ test("dbRead normalizes the handler response and clamps max_rows", async () => {
     executeSqlRead: async args => {
       assert.equal(args.maxRows, 5);
       assert.equal(args.maxResultBytes, 1024);
-      assert.equal(args.sqlText, "SELECT id FROM dbo.Users");
+      assert.equal(args.sqlText, originalSql);
 
       return {
         columns: [{ name: "id", nullable: false, type: "Int" }],
@@ -112,7 +113,7 @@ test("dbRead normalizes the handler response and clamps max_rows", async () => {
 
   const result = await handlers.dbRead({
     target_id: "dev-main",
-    sql: "SELECT id FROM dbo.Users",
+    sql: originalSql,
     max_rows: 999
   });
 

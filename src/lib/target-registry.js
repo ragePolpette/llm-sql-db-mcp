@@ -3,7 +3,7 @@ import { z } from "zod";
 
 const allowedProviders = ["none", "lmstudio", "ollama"];
 const allowedStatuses = ["active", "disabled"];
-const allowedAnonymizationModes = ["off", "direct", "hybrid"];
+const allowedAnonymizationModes = ["off", "direct", "deterministic", "hybrid", "llm-strict"];
 
 const targetSchema = z
   .object({
