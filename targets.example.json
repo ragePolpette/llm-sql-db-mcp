@@ -1,0 +1,46 @@
+{
+  "targets": [
+    {
+      "target_id": "dev-main",
+      "display_name": "Dev Main",
+      "environment": "dev",
+      "db_kind": "sqlserver",
+      "status": "active",
+      "connection_env_var": "DB_DEV_MAIN_CONNECTION_STRING",
+      "read_enabled": true,
+      "write_enabled": false,
+      "anonymization_enabled": false,
+      "anonymization_mode": "off",
+      "llm_provider": "none",
+      "llm_model": "",
+      "max_rows": 200,
+      "max_result_bytes": 262144,
+      "allowed_tools": [
+        "db_target_info",
+        "db_policy_info",
+        "db_read"
+      ]
+    },
+    {
+      "target_id": "prod-main",
+      "display_name": "Prod Main",
+      "environment": "prod",
+      "db_kind": "sqlserver",
+      "status": "active",
+      "connection_env_var": "DB_PROD_MAIN_CONNECTION_STRING",
+      "read_enabled": true,
+      "write_enabled": false,
+      "anonymization_enabled": true,
+      "anonymization_mode": "hybrid",
+      "llm_provider": "lmstudio",
+      "llm_model": "google/gemma-3-4b",
+      "max_rows": 100,
+      "max_result_bytes": 131072,
+      "allowed_tools": [
+        "db_target_info",
+        "db_policy_info",
+        "db_read"
+      ]
+    }
+  ]
+}
