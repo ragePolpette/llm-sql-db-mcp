@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { inspectSqlSafety } from "../src/lib/sql-guard.js";
+import { assertReadSafeSql, inspectSqlSafety } from "../src/lib/sql-guard.js";
 
 test("sql guard allows plain select", () => {
   const result = inspectSqlSafety("SELECT id, name FROM dbo.Users");
@@ -16,6 +16,22 @@ test("sql guard allows read-only cte", () => {
   `);
 
   assert.equal(result.allowed, true);
+});
+
+test("sql guard allows sql server cte with leading semicolon", () => {
+  const result = inspectSqlSafety(`
+    ;WITH latest AS (
+      SELECT TOP 10 id FROM dbo.Users
+    )
+    SELECT * FROM latest;
+  `);
+
+  assert.equal(result.allowed, true);
+});
+
+test("assertReadSafeSql preserves string literals for execution", () => {
+  const sql = "SELECT * FROM dbo.Users WHERE status = 'OPEN'";
+  assert.equal(assertReadSafeSql(sql), sql);
 });
 
 test("sql guard rejects write keywords", () => {
