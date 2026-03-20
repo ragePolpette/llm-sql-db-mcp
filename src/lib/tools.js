@@ -136,6 +136,8 @@ export function registerFixedTools(server, handlers) {
         target_id: z.string(),
         sql: z.string(),
         anonymization_applied: z.boolean(),
+        anonymization_provider: z.string(),
+        anonymization_mode: z.string(),
         columns: z.array(
           z.object({
             name: z.string(),

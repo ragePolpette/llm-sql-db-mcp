@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "check": "node --check src/server.js && node --check src/lib/config.js && node --check src/lib/session-store.js && node --check src/lib/target-registry.js && node --check src/lib/policy-engine.js && node --check src/lib/tools.js && node --check src/lib/handlers.js && node --check src/lib/sql-guard.js && node --check src/lib/drivers/sqlserver.js",
+    "check": "node --check src/server.js && node --check src/lib/config.js && node --check src/lib/session-store.js && node --check src/lib/target-registry.js && node --check src/lib/policy-engine.js && node --check src/lib/tools.js && node --check src/lib/handlers.js && node --check src/lib/sql-guard.js && node --check src/lib/anonymizer.js && node --check src/lib/drivers/sqlserver.js && node --check src/lib/providers/lmstudio.js && node --check src/lib/providers/ollama.js",
     "test": "node --test"
   },
   "dependencies": {
