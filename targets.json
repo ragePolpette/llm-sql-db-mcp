@@ -8,7 +8,7 @@
       "status": "active",
       "connection_env_var": "DB_DEV_MAIN_CONNECTION_STRING",
       "read_enabled": true,
-      "write_enabled": false,
+      "write_enabled": true,
       "anonymization_enabled": false,
       "anonymization_mode": "off",
       "llm_provider": "none",
@@ -18,7 +18,8 @@
       "allowed_tools": [
         "db_target_info",
         "db_policy_info",
-        "db_read"
+        "db_read",
+        "db_write"
       ]
     },
     {
@@ -39,7 +40,8 @@
       "allowed_tools": [
         "db_target_info",
         "db_policy_info",
-        "db_read"
+        "db_read",
+        "db_write"
       ]
     }
   ]

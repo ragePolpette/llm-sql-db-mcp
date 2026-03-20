@@ -4,7 +4,7 @@ import {
   toSafeTargetInfo,
   toSafeTargetSummary
 } from "./policy-engine.js";
-import { assertReadSafeSql } from "./sql-guard.js";
+import { assertReadSafeSql, assertWriteSafeSql } from "./sql-guard.js";
 
 function createJsonResult(payload) {
   return {
@@ -59,6 +59,7 @@ export function createHandlers({
   targetRegistry,
   env = process.env,
   executeSqlRead,
+  executeSqlWrite,
   anonymizeQueryResult,
   providerConfig,
   fetchImpl = globalThis.fetch,
@@ -194,6 +195,80 @@ export function createHandlers({
         return createErrorResult(error.message, {
           target_id: targetId,
           tool_name: "db_read"
+        });
+      }
+    },
+
+    async dbWrite({ target_id: targetId, sql, parameters = {} }) {
+      const target = targetRegistry.get(targetId);
+      if (!target) {
+        return createErrorResult(`Unknown target_id: ${targetId}`, {
+          target_id: targetId
+        });
+      }
+
+      const policy = evaluateToolPolicy({
+        target,
+        toolName: "db_write"
+      });
+
+      if (!policy.allowed) {
+        return createErrorResult(policy.denial_reason, {
+          target_id: targetId,
+          tool_name: "db_write"
+        });
+      }
+
+      let normalizedSql;
+      try {
+        normalizedSql = assertWriteSafeSql(sql);
+      } catch (error) {
+        return createErrorResult(error.message, {
+          target_id: targetId,
+          tool_name: "db_write"
+        });
+      }
+
+      try {
+        const connectionString = getConnectionString(target, env);
+        logDbEvent?.("query_in", {
+          tool: "db_write",
+          target_id: target.target_id,
+          sql: normalizedSql,
+          parameters
+        });
+
+        const result = await executeSqlWrite({
+          connectionString,
+          sqlText: normalizedSql,
+          parameters,
+          maxResultBytes: target.max_result_bytes
+        });
+
+        logDbEvent?.("query_out", {
+          tool: "db_write",
+          target_id: target.target_id,
+          rowCount: result.row_count,
+          rowsAffected: result.rows_affected,
+          truncated: result.truncated,
+          response: {
+            success: true,
+            rowCount: result.row_count,
+            rowsAffected: result.rows_affected,
+            truncated: result.truncated,
+            rows: result.rows
+          }
+        });
+
+        return createJsonResult({
+          target_id: target.target_id,
+          sql: normalizedSql,
+          ...result
+        });
+      } catch (error) {
+        return createErrorResult(error.message, {
+          target_id: targetId,
+          tool_name: "db_write"
         });
       }
     }

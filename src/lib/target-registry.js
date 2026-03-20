@@ -14,7 +14,7 @@ const targetSchema = z
     status: z.enum(allowedStatuses),
     connection_env_var: z.string().min(1).regex(/^[A-Z0-9_]+$/),
     read_enabled: z.boolean(),
-    write_enabled: z.literal(false),
+    write_enabled: z.boolean(),
     anonymization_enabled: z.boolean(),
     anonymization_mode: z.enum(allowedAnonymizationModes),
     llm_provider: z.enum(allowedProviders),
@@ -97,6 +97,11 @@ function applyTargetEnvOverrides(target, env) {
   const readEnabled = env[`${prefix}_READ_ENABLED`];
   if (readEnabled !== undefined && readEnabled !== "") {
     nextTarget.read_enabled = parseBooleanOverride(readEnabled, `${prefix}_READ_ENABLED`);
+  }
+
+  const writeEnabled = env[`${prefix}_WRITE_ENABLED`];
+  if (writeEnabled !== undefined && writeEnabled !== "") {
+    nextTarget.write_enabled = parseBooleanOverride(writeEnabled, `${prefix}_WRITE_ENABLED`);
   }
 
   const anonymizationEnabled = env[`${prefix}_ANONYMIZATION_ENABLED`];

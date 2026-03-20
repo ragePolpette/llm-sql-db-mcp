@@ -13,14 +13,14 @@ function createTestRegistry() {
       status: "active",
       connection_env_var: "DB_DEV_MAIN_CONNECTION_STRING",
       read_enabled: true,
-      write_enabled: false,
+      write_enabled: true,
       anonymization_enabled: false,
       anonymization_mode: "off",
       llm_provider: "none",
       llm_model: "",
       max_rows: 5,
       max_result_bytes: 1024,
-      allowed_tools: ["db_target_info", "db_policy_info", "db_read"]
+      allowed_tools: ["db_target_info", "db_policy_info", "db_read", "db_write"]
     },
     {
       target_id: "prod-main",
@@ -37,7 +37,7 @@ function createTestRegistry() {
       llm_model: "gemma",
       max_rows: 5,
       max_result_bytes: 1024,
-      allowed_tools: ["db_target_info", "db_policy_info", "db_read"]
+      allowed_tools: ["db_target_info", "db_policy_info", "db_read", "db_write"]
     }
   ]);
 }
@@ -222,4 +222,64 @@ test("dbRead emits query_in and query_out events for dashboard inspection", asyn
   assert.equal(events[1].event, "query_out");
   assert.equal(events[1].payload.rowCount, 1);
   assert.equal(events[1].payload.response.anonymizationApplied, true);
+});
+
+test("dbWrite executes a write statement when target write is enabled", async () => {
+  let writeCalled = false;
+
+  const handlers = createHandlers({
+    targetRegistry: createTestRegistry(),
+    env: {
+      DB_DEV_MAIN_CONNECTION_STRING: "Server=.;Database=Test;Trusted_Connection=True;"
+    },
+    executeSqlRead: async () => {
+      throw new Error("read should not be called");
+    },
+    executeSqlWrite: async args => {
+      writeCalled = true;
+      assert.equal(args.sqlText, "UPDATE dbo.Users SET status = 'OPEN' WHERE id = 1");
+      return {
+        columns: [],
+        rows: [],
+        row_count: 0,
+        rows_affected: 1,
+        max_result_bytes_applied: 1024,
+        result_bytes: 2,
+        truncated: false,
+        duration_ms: 4
+      };
+    }
+  });
+
+  const result = await handlers.dbWrite({
+    target_id: "dev-main",
+    sql: "UPDATE dbo.Users SET status = 'OPEN' WHERE id = 1"
+  });
+
+  assert.equal(writeCalled, true);
+  assert.equal(result.isError, undefined);
+  assert.equal(result.structuredContent.rows_affected, 1);
+});
+
+test("dbWrite is denied when target write is disabled", async () => {
+  const handlers = createHandlers({
+    targetRegistry: createTestRegistry(),
+    env: {
+      DB_PROD_MAIN_CONNECTION_STRING: "Server=.;Database=Prod;Trusted_Connection=True;"
+    },
+    executeSqlRead: async () => {
+      throw new Error("read should not be called");
+    },
+    executeSqlWrite: async () => {
+      throw new Error("write should not be called");
+    }
+  });
+
+  const result = await handlers.dbWrite({
+    target_id: "prod-main",
+    sql: "UPDATE dbo.Users SET status = 'OPEN' WHERE id = 1"
+  });
+
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /Write access is disabled/i);
 });

@@ -129,6 +129,43 @@ export async function executeSqlServerRead({
   };
 }
 
+export async function executeSqlServerWrite({
+  connectionString,
+  sqlText,
+  parameters = {},
+  maxResultBytes
+}) {
+  const pool = await getPool(connectionString);
+  const request = pool.request();
+
+  for (const [name, value] of Object.entries(parameters)) {
+    if (!PARAM_NAME_PATTERN.test(name)) {
+      throw new Error(`Invalid SQL parameter name: ${name}`);
+    }
+
+    request.input(name, value);
+  }
+
+  const startedAt = Date.now();
+  const queryResult = await request.query(sqlText);
+  const recordset = queryResult.recordset ?? [];
+  const normalizedRows = normalizeRows(recordset);
+  const boundedRows = buildBoundedRows(normalizedRows, maxResultBytes);
+
+  return {
+    columns: normalizeColumns(recordset),
+    rows: boundedRows.rows,
+    row_count: boundedRows.rows.length,
+    rows_affected: Array.isArray(queryResult.rowsAffected)
+      ? queryResult.rowsAffected.reduce((sum, value) => sum + (Number(value) || 0), 0)
+      : 0,
+    max_result_bytes_applied: maxResultBytes,
+    result_bytes: boundedRows.resultBytes,
+    truncated: boundedRows.rows.length < normalizedRows.length,
+    duration_ms: Date.now() - startedAt
+  };
+}
+
 export async function closeSqlServerPools() {
   const pools = [...poolCache.values()];
   poolCache.clear();
