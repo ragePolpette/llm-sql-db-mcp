@@ -6,6 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { anonymizeQueryResult } from "./lib/anonymizer.js";
 import { isOriginAllowed, loadRuntimeConfig } from "./lib/config.js";
 import { executeSqlServerRead } from "./lib/drivers/sqlserver.js";
 import { createHandlers } from "./lib/handlers.js";
@@ -96,7 +97,9 @@ export async function createApp({ cwd = process.cwd() } = {}) {
     const server = buildMcpServer(config, {
       targetRegistry,
       env: process.env,
-      executeSqlRead: executeSqlServerRead
+      executeSqlRead: executeSqlServerRead,
+      anonymizeQueryResult,
+      providerConfig: config.providers
     });
     let transport;
 

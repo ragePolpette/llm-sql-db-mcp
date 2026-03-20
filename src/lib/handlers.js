@@ -58,7 +58,10 @@ function getConnectionString(target, env) {
 export function createHandlers({
   targetRegistry,
   env = process.env,
-  executeSqlRead
+  executeSqlRead,
+  anonymizeQueryResult,
+  providerConfig,
+  fetchImpl = globalThis.fetch
 }) {
   return {
     async dbTargetList() {
@@ -136,11 +139,24 @@ export function createHandlers({
           maxResultBytes: target.max_result_bytes
         });
 
+        const finalResult = policy.anonymization_required
+          ? await anonymizeQueryResult({
+              target,
+              queryResult: result,
+              providerConfig,
+              fetchImpl
+            })
+          : {
+              ...result,
+              anonymization_applied: false,
+              anonymization_provider: "none",
+              anonymization_mode: target.anonymization_mode
+            };
+
         return createJsonResult({
           target_id: target.target_id,
           sql: normalizedSql,
-          anonymization_applied: false,
-          ...result
+          ...finalResult
         });
       } catch (error) {
         return createErrorResult(error.message, {

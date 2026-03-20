@@ -21,6 +21,23 @@ function createTestRegistry() {
       max_rows: 5,
       max_result_bytes: 1024,
       allowed_tools: ["db_target_info", "db_policy_info", "db_read"]
+    },
+    {
+      target_id: "prod-main",
+      display_name: "Prod Main",
+      environment: "prod",
+      db_kind: "sqlserver",
+      status: "active",
+      connection_env_var: "DB_PROD_MAIN_CONNECTION_STRING",
+      read_enabled: true,
+      write_enabled: false,
+      anonymization_enabled: true,
+      anonymization_mode: "hybrid",
+      llm_provider: "lmstudio",
+      llm_model: "gemma",
+      max_rows: 5,
+      max_result_bytes: 1024,
+      allowed_tools: ["db_target_info", "db_policy_info", "db_read"]
     }
   ]);
 }
@@ -103,4 +120,53 @@ test("dbRead normalizes the handler response and clamps max_rows", async () => {
   assert.equal(result.structuredContent.target_id, "dev-main");
   assert.equal(result.structuredContent.anonymization_applied, false);
   assert.deepEqual(result.structuredContent.rows, [{ id: 1 }]);
+});
+
+test("dbRead applies target-aware anonymization when the target policy requires it", async () => {
+  let anonymizerCalled = false;
+
+  const handlers = createHandlers({
+    targetRegistry: createTestRegistry(),
+    env: {
+      DB_PROD_MAIN_CONNECTION_STRING: "Server=.;Database=Prod;Trusted_Connection=True;"
+    },
+    providerConfig: {
+      lmstudioBaseUrl: "http://127.0.0.1:1234/v1",
+      ollamaBaseUrl: "http://127.0.0.1:11434"
+    },
+    executeSqlRead: async () => ({
+      columns: [{ name: "name", nullable: true, type: "NVarChar" }],
+      rows: [{ name: "Mario Rossi" }],
+      row_count: 1,
+      total_rows_before_limits: 1,
+      max_rows_applied: 5,
+      max_result_bytes_applied: 1024,
+      result_bytes: 24,
+      truncated: false,
+      duration_ms: 1
+    }),
+    anonymizeQueryResult: async ({ target, queryResult, providerConfig }) => {
+      anonymizerCalled = true;
+      assert.equal(target.target_id, "prod-main");
+      assert.equal(providerConfig.lmstudioBaseUrl, "http://127.0.0.1:1234/v1");
+
+      return {
+        ...queryResult,
+        rows: [{ name: "Nome Anonimo" }],
+        anonymization_applied: true,
+        anonymization_provider: "lmstudio",
+        anonymization_mode: "hybrid"
+      };
+    }
+  });
+
+  const result = await handlers.dbRead({
+    target_id: "prod-main",
+    sql: "SELECT name FROM dbo.Users"
+  });
+
+  assert.equal(anonymizerCalled, true);
+  assert.equal(result.structuredContent.anonymization_applied, true);
+  assert.equal(result.structuredContent.anonymization_provider, "lmstudio");
+  assert.deepEqual(result.structuredContent.rows, [{ name: "Nome Anonimo" }]);
 });
