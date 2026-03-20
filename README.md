@@ -74,6 +74,16 @@ Variabili principali:
 - `ANON_FAIL_OPEN`: se `true`, in `llm-strict` non blocca la query quando l'identificazione LLM fallisce
 - `ANON_TIMEOUT_MS`: timeout delle chiamate provider per identificazione campi
 
+Override runtime per target:
+- prefisso: `TARGET_<TARGET_ID_NORMALIZZATO>_...`
+- esempio per `prod-main`: `TARGET_PROD_MAIN_...`
+- campi supportati:
+  - `READ_ENABLED`
+  - `ANONYMIZATION_ENABLED`
+  - `ANONYMIZATION_MODE`
+  - `LLM_PROVIDER`
+  - `LLM_MODEL`
+
 Regola importante:
 - non mettere connection string, API key, password o secret nel file `.env` del progetto; il loader le rifiuta esplicitamente
 

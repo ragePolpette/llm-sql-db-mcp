@@ -130,3 +130,41 @@ test("loadTargetRegistry accepts deterministic and llm-strict anonymization mode
   assert.equal(registry.get("prod-det").anonymization_mode, "deterministic");
   assert.equal(registry.get("prod-strict").anonymization_mode, "llm-strict");
 });
+
+test("loadTargetRegistry applies per-target env overrides", async () => {
+  const filePath = writeTempTargetsFile({
+    targets: [
+      {
+        target_id: "prod-main",
+        display_name: "Prod Main",
+        environment: "prod",
+        db_kind: "sqlserver",
+        status: "active",
+        connection_env_var: "DB_PROD_MAIN_CONNECTION_STRING",
+        read_enabled: true,
+        write_enabled: false,
+        anonymization_enabled: true,
+        anonymization_mode: "hybrid",
+        llm_provider: "lmstudio",
+        llm_model: "google/gemma-3-4b",
+        max_rows: 100,
+        max_result_bytes: 1024,
+        allowed_tools: ["db_target_info", "db_policy_info", "db_read"]
+      }
+    ]
+  });
+
+  const registry = await loadTargetRegistry(filePath, {
+    env: {
+      TARGET_PROD_MAIN_ANONYMIZATION_ENABLED: "false",
+      TARGET_PROD_MAIN_LLM_PROVIDER: "ollama",
+      TARGET_PROD_MAIN_LLM_MODEL: "gemma3:4b"
+    }
+  });
+
+  const target = registry.get("prod-main");
+  assert.equal(target.anonymization_enabled, false);
+  assert.equal(target.anonymization_mode, "off");
+  assert.equal(target.llm_provider, "none");
+  assert.equal(target.llm_model, "");
+});
