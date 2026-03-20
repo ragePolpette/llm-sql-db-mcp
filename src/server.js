@@ -8,7 +8,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { anonymizeQueryResult } from "./lib/anonymizer.js";
 import { isOriginAllowed, loadRuntimeConfig } from "./lib/config.js";
-import { executeSqlServerRead } from "./lib/drivers/sqlserver.js";
+import { executeSqlServerRead, executeSqlServerWrite } from "./lib/drivers/sqlserver.js";
 import { createHandlers } from "./lib/handlers.js";
 import { registerFixedTools } from "./lib/tools.js";
 import { SessionStore } from "./lib/session-store.js";
@@ -111,6 +111,7 @@ export async function createApp({ cwd = process.cwd() } = {}) {
       targetRegistry,
       env: process.env,
       executeSqlRead: executeSqlServerRead,
+      executeSqlWrite: executeSqlServerWrite,
       anonymizeQueryResult,
       providerConfig: config.providers,
       logDbEvent

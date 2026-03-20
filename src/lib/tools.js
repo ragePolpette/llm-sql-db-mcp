@@ -161,4 +161,46 @@ export function registerFixedTools(server, handlers) {
     },
     handlers.dbRead
   );
+
+  server.registerTool(
+    "db_write",
+    {
+      title: "Execute Write SQL",
+      description: "Execute a write SQL Server statement for a specific target_id when the target policy enables write access. Supports INSERT, UPDATE, DELETE, MERGE, and write CTE statements only.",
+      inputSchema: {
+        target_id: z.string().min(1).describe("Target identifier to query."),
+        sql: z.string().min(1).describe("Write SQL text. DDL, EXEC, SELECT INTO, and multi-statement input is rejected."),
+        parameters: z
+          .record(
+            z.string(),
+            z.union([z.string(), z.number(), z.boolean(), z.null()])
+          )
+          .optional()
+          .describe("Optional named SQL parameters.")
+      },
+      outputSchema: {
+        target_id: z.string(),
+        sql: z.string(),
+        columns: z.array(
+          z.object({
+            name: z.string(),
+            nullable: z.boolean(),
+            type: z.string()
+          })
+        ),
+        rows: z.array(z.record(z.string(), z.unknown())),
+        row_count: z.number().int().nonnegative(),
+        rows_affected: z.number().int().nonnegative(),
+        max_result_bytes_applied: z.number().int().positive(),
+        result_bytes: z.number().int().nonnegative(),
+        truncated: z.boolean(),
+        duration_ms: z.number().int().nonnegative()
+      },
+      annotations: {
+        readOnlyHint: false,
+        openWorldHint: false
+      }
+    },
+    handlers.dbWrite
+  );
 }

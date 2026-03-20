@@ -1,4 +1,4 @@
-const FORBIDDEN_KEYWORDS = [
+const READ_FORBIDDEN_KEYWORDS = [
   "INSERT",
   "UPDATE",
   "DELETE",
@@ -10,6 +10,15 @@ const FORBIDDEN_KEYWORDS = [
   "EXEC",
   "EXECUTE",
   "INTO"
+];
+
+const WRITE_FORBIDDEN_KEYWORDS = [
+  "DROP",
+  "ALTER",
+  "TRUNCATE",
+  "CREATE",
+  "EXEC",
+  "EXECUTE"
 ];
 
 function stripComments(sql) {
@@ -59,7 +68,7 @@ export function inspectSqlSafety(sql) {
     };
   }
 
-  for (const keyword of FORBIDDEN_KEYWORDS) {
+  for (const keyword of READ_FORBIDDEN_KEYWORDS) {
     if (new RegExp(`\\b${keyword}\\b`, "i").test(normalizedUpper)) {
       return {
         allowed: false,
@@ -82,8 +91,74 @@ export function inspectSqlSafety(sql) {
   };
 }
 
+export function inspectWriteSafety(sql) {
+  if (typeof sql !== "string" || sql.trim() === "") {
+    return {
+      allowed: false,
+      reason: "SQL text is required."
+    };
+  }
+
+  const normalized = normalizeSql(sql);
+  const inspectionSql = stripLeadingStatementTerminator(normalized);
+  const normalizedUpper = inspectionSql.toUpperCase();
+
+  if (!/^(INSERT|UPDATE|DELETE|MERGE|WITH)\b/.test(normalizedUpper)) {
+    return {
+      allowed: false,
+      reason: "Only INSERT, UPDATE, DELETE, MERGE, or write CTE statements are allowed."
+    };
+  }
+
+  const semicolonCount = (normalizedUpper.match(/;/g) ?? []).length;
+  if (semicolonCount > 1 || (semicolonCount === 1 && !normalizedUpper.endsWith(";"))) {
+    return {
+      allowed: false,
+      reason: "Multiple SQL statements are not allowed."
+    };
+  }
+
+  for (const keyword of WRITE_FORBIDDEN_KEYWORDS) {
+    if (new RegExp(`\\b${keyword}\\b`, "i").test(normalizedUpper)) {
+      return {
+        allowed: false,
+        reason: `Forbidden SQL keyword detected: ${keyword}.`
+      };
+    }
+  }
+
+  if (/\bSELECT\s+INTO\b/i.test(normalizedUpper)) {
+    return {
+      allowed: false,
+      reason: "SELECT INTO is not allowed."
+    };
+  }
+
+  if (normalizedUpper.startsWith("WITH") && !/\b(INSERT|UPDATE|DELETE|MERGE)\b/.test(normalizedUpper)) {
+    return {
+      allowed: false,
+      reason: "Write CTEs must resolve to INSERT, UPDATE, DELETE, or MERGE."
+    };
+  }
+
+  return {
+    allowed: true,
+    reason: null,
+    normalizedSql: inspectionSql
+  };
+}
+
 export function assertReadSafeSql(sql) {
   const inspection = inspectSqlSafety(sql);
+  if (!inspection.allowed) {
+    throw new Error(inspection.reason);
+  }
+
+  return String(sql).trim();
+}
+
+export function assertWriteSafeSql(sql) {
+  const inspection = inspectWriteSafety(sql);
   if (!inspection.allowed) {
     throw new Error(inspection.reason);
   }

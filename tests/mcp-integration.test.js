@@ -52,7 +52,7 @@ test("integration: health, tool surface, target tools, and db_read error path wo
     const tools = await client.listTools();
     assert.deepEqual(
       tools.tools.map(tool => tool.name).sort(),
-      ["db_policy_info", "db_read", "db_target_info", "db_target_list"]
+      ["db_policy_info", "db_read", "db_target_info", "db_target_list", "db_write"]
     );
 
     const targetList = await client.callTool({ name: "db_target_list", arguments: {} });
