@@ -28,6 +28,10 @@ function normalizeSql(sql) {
     .trim();
 }
 
+function stripLeadingStatementTerminator(sql) {
+  return sql.replace(/^;\s*/, "");
+}
+
 export function inspectSqlSafety(sql) {
   if (typeof sql !== "string" || sql.trim() === "") {
     return {
@@ -37,7 +41,8 @@ export function inspectSqlSafety(sql) {
   }
 
   const normalized = normalizeSql(sql);
-  const normalizedUpper = normalized.toUpperCase();
+  const inspectionSql = stripLeadingStatementTerminator(normalized);
+  const normalizedUpper = inspectionSql.toUpperCase();
 
   if (!/^(SELECT|WITH)\b/.test(normalizedUpper)) {
     return {
@@ -73,7 +78,7 @@ export function inspectSqlSafety(sql) {
   return {
     allowed: true,
     reason: null,
-    normalizedSql: normalized
+    normalizedSql: inspectionSql
   };
 }
 
@@ -83,5 +88,5 @@ export function assertReadSafeSql(sql) {
     throw new Error(inspection.reason);
   }
 
-  return inspection.normalizedSql;
+  return String(sql).trim();
 }

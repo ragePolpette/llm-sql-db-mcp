@@ -57,6 +57,37 @@ function ensureRowObjects(rows) {
   return rows;
 }
 
+function getRowKeys(row) {
+  return Object.keys(row).sort();
+}
+
+function ensureRowsMatchSourceShape(rows, sourceRows) {
+  if (rows.length !== sourceRows.length) {
+    throw new Error(
+      `Provider returned ${rows.length} rows, expected ${sourceRows.length}.`
+    );
+  }
+
+  for (let index = 0; index < sourceRows.length; index += 1) {
+    const sourceRow = sourceRows[index];
+    const candidateRow = rows[index];
+    const sourceKeys = getRowKeys(sourceRow);
+    const candidateKeys = getRowKeys(candidateRow);
+
+    if (sourceKeys.length !== candidateKeys.length) {
+      throw new Error(`Provider row ${index} key count mismatch.`);
+    }
+
+    for (let keyIndex = 0; keyIndex < sourceKeys.length; keyIndex += 1) {
+      if (sourceKeys[keyIndex] !== candidateKeys[keyIndex]) {
+        throw new Error(`Provider row ${index} keys do not match the source shape.`);
+      }
+    }
+  }
+
+  return rows;
+}
+
 function buildPrompts({ target, queryResult }) {
   return {
     systemPrompt:
@@ -129,7 +160,10 @@ export async function anonymizeQueryResult({
   }
 
   const parsed = parseProviderJson(providerText);
-  const parsedRows = ensureRowObjects(extractRowsFromProviderPayload(parsed));
+  const parsedRows = ensureRowsMatchSourceShape(
+    ensureRowObjects(extractRowsFromProviderPayload(parsed)),
+    queryResult.rows
+  );
   const boundedRows = clampRowsToByteLimit(parsedRows, queryResult.max_result_bytes_applied);
 
   return {
