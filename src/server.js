@@ -7,6 +7,7 @@ import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { isOriginAllowed, loadRuntimeConfig } from "./lib/config.js";
+import { executeSqlServerRead } from "./lib/drivers/sqlserver.js";
 import { createHandlers } from "./lib/handlers.js";
 import { registerFixedTools } from "./lib/tools.js";
 import { SessionStore } from "./lib/session-store.js";
@@ -93,7 +94,9 @@ export async function createApp({ cwd = process.cwd() } = {}) {
 
   async function createTransportForInitialization() {
     const server = buildMcpServer(config, {
-      targetRegistry
+      targetRegistry,
+      env: process.env,
+      executeSqlRead: executeSqlServerRead
     });
     let transport;
 
