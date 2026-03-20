@@ -20,6 +20,8 @@ test("loadRuntimeConfig returns defaults when no .env is present", () => {
   assert.equal(config.port, 3000);
   assert.equal(path.basename(config.targetsFile), "targets.json");
   assert.equal(config.sessionTtlMs, 0);
+  assert.equal(config.providers.fieldIdentification, "hybrid");
+  assert.equal(config.providers.timeoutMs, 5000);
 });
 
 test("loadRuntimeConfig rejects forbidden secrets in project .env", () => {
