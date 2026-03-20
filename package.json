@@ -1,0 +1,21 @@
+{
+  "name": "llm-sql-db-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Policy-driven MCP server for multiple SQL Server targets.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "check": "node --check src/server.js && node --check src/lib/config.js && node --check src/lib/session-store.js && node --check src/lib/target-registry.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "zod": "^4.1.12"
+  }
+}
