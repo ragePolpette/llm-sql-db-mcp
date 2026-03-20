@@ -156,6 +156,7 @@ test("loadTargetRegistry applies per-target env overrides", async () => {
 
   const registry = await loadTargetRegistry(filePath, {
     env: {
+      TARGET_PROD_MAIN_WRITE_ENABLED: "true",
       TARGET_PROD_MAIN_ANONYMIZATION_ENABLED: "false",
       TARGET_PROD_MAIN_LLM_PROVIDER: "ollama",
       TARGET_PROD_MAIN_LLM_MODEL: "gemma3:4b"
@@ -163,6 +164,7 @@ test("loadTargetRegistry applies per-target env overrides", async () => {
   });
 
   const target = registry.get("prod-main");
+  assert.equal(target.write_enabled, true);
   assert.equal(target.anonymization_enabled, false);
   assert.equal(target.anonymization_mode, "off");
   assert.equal(target.llm_provider, "none");
