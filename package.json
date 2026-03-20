@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "check": "node --check src/server.js && node --check src/lib/config.js && node --check src/lib/session-store.js && node --check src/lib/target-registry.js"
+    "check": "node --check src/server.js && node --check src/lib/config.js && node --check src/lib/session-store.js && node --check src/lib/target-registry.js && node --check src/lib/policy-engine.js && node --check src/lib/tools.js && node --check src/lib/handlers.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",

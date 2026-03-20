@@ -7,6 +7,8 @@ import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { isOriginAllowed, loadRuntimeConfig } from "./lib/config.js";
+import { createHandlers } from "./lib/handlers.js";
+import { registerFixedTools } from "./lib/tools.js";
 import { SessionStore } from "./lib/session-store.js";
 import { loadTargetRegistry } from "./lib/target-registry.js";
 
@@ -21,11 +23,14 @@ function createProtocolErrorResponse(res, status, message) {
   });
 }
 
-function buildMcpServer(config) {
-  return new McpServer({
+function buildMcpServer(config, dependencies) {
+  const server = new McpServer({
     name: config.serverName,
     version: config.serverVersion
   });
+
+  registerFixedTools(server, createHandlers(dependencies));
+  return server;
 }
 
 async function safeCloseTransport(transport, sessionId) {
@@ -87,7 +92,9 @@ export async function createApp({ cwd = process.cwd() } = {}) {
   }
 
   async function createTransportForInitialization() {
-    const server = buildMcpServer(config);
+    const server = buildMcpServer(config, {
+      targetRegistry
+    });
     let transport;
 
     transport = new StreamableHTTPServerTransport({
