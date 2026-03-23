@@ -4,10 +4,7 @@ import { anonymizeWithOllama } from "../providers/ollama.js";
 
 const EMAIL_REGEX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const PHONE_TEXT_REGEX = /(?=.*[+\s().-])(\+?\d[\d\s().-]{6,}\d)/g;
-const FISCAL_REGEX = /\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b/gi;
-const VAT_REGEX = /\b\d{11,16}\b/g;
-
-const KIND_VALUES = new Set(["email", "phone", "cf", "vat", "name", "org", "address", "city", "text"]);
+const KIND_VALUES = new Set(["email", "phone", "name", "org", "address", "city", "text"]);
 const NONE_KIND = "__none__";
 const GLOBAL_CACHE_SCOPE = "__global__";
 const LLM_KIND_CACHE_MAX_SIZE = 512;
@@ -35,7 +32,18 @@ const SAFE_EXACT_KEYS = new Set([
   "data",
   "estero",
   "numrif",
-  "num_rif"
+  "num_rif",
+  "cf",
+  "codicefiscale",
+  "codice_fiscale",
+  "cod_fiscale",
+  "codfiscale",
+  "codfiscalerl",
+  "partitaiva",
+  "partita_iva",
+  "piva",
+  "vat",
+  "pi"
 ]);
 
 const SAFE_KEY_TOKENS = new Set([
@@ -91,16 +99,6 @@ const EXACT_KEY_KIND = new Map([
   ["cellulare", "phone"],
   ["mobile", "phone"],
   ["fax", "phone"],
-  ["cf", "cf"],
-  ["codicefiscale", "cf"],
-  ["cod_fiscale", "cf"],
-  ["codfiscale", "cf"],
-  ["codfiscalerl", "cf"],
-  ["partitaiva", "vat"],
-  ["partita_iva", "vat"],
-  ["piva", "vat"],
-  ["vat", "vat"],
-  ["pi", "vat"],
   ["nome", "name"],
   ["cognome", "name"],
   ["nomerl", "name"],
@@ -345,26 +343,6 @@ function inferKindHeuristic(key) {
   }
 
   if (
-    compact.includes("codicefiscale") ||
-    compact.includes("codfiscale") ||
-    compact === "cf" ||
-    hasAnyToken(tokens, ["cf", "codicefiscale", "codfiscale"])
-  ) {
-    return "cf";
-  }
-
-  if (
-    compact.includes("partitaiva") ||
-    compact === "piva" ||
-    compact === "vat" ||
-    (tokens.has("partita") && tokens.has("iva")) ||
-    tokens.has("piva") ||
-    tokens.has("vat")
-  ) {
-    return "vat";
-  }
-
-  if (
     compact.startsWith("nome") ||
     compact.startsWith("cognome") ||
     hasAnyToken(tokens, ["nome", "name", "cognome", "surname", "firstname", "lastname", "referente"])
@@ -498,10 +476,6 @@ function replaceByKind(kind, key, value, cfg) {
       return `user_${stableDigest(salt, normalizedKey, raw, 10).toLowerCase()}@example.invalid`;
     case "phone":
       return toPhoneFromDigest(salt, normalizedKey, raw);
-    case "cf":
-      return `CF_${stableDigest(salt, normalizedKey, raw, 16)}`;
-    case "vat":
-      return `VAT_${stableDigest(salt, normalizedKey, raw, 12)}`;
     case "address":
       return `ADDRESS_${stableDigest(salt, normalizedKey, raw, 8)}`;
     case "city":
@@ -521,8 +495,6 @@ function maskInlineWithHashes(value, cfg) {
   const salt = getHashSalt(cfg);
   return String(value)
     .replace(EMAIL_REGEX, match => `user_${stableDigest(salt, "inline_email", match, 10).toLowerCase()}@example.invalid`)
-    .replace(FISCAL_REGEX, match => `CF_${stableDigest(salt, "inline_cf", match, 16)}`)
-    .replace(VAT_REGEX, match => `VAT_${stableDigest(salt, "inline_vat", match, 12)}`)
     .replace(PHONE_TEXT_REGEX, match => toPhoneFromDigest(salt, "inline_phone", match));
 }
 
@@ -622,14 +594,14 @@ async function identifyFieldsWithProvider(rows, cfg, fetchImpl, cacheScope = GLO
   const systemPrompt = [
     "Classify database fields for anonymization.",
     "Return ONLY valid JSON in the format {\"fields\":{\"<key>\":\"<kind>\"}}.",
-    "Allowed kinds: email, phone, cf, vat, name, org, address, city, text, none.",
+    "Allowed kinds: email, phone, name, org, address, city, text, none.",
     "Use none for technical, administrative, accounting, numeric, enumerated, or descriptive fields that are not clearly personal or organization-identifying.",
     "Typical none examples: id, codice, conto, numero documento, protocollo, stato, tipo, flag, data, timestamp, importo, aliquota, descrizione contabile, causale, riferimento amministrativo, note tecniche, internal classification fields, fixed codes like OQ00000009, and flags like 0/1 or Y/N.",
     "Use text only when the free text can reasonably contain personal data or sensitive organization data in clear text.",
     "Do not use text as a generic fallback for every description field.",
     "Use org only for real company or institution names.",
     "Use name only for person names.",
-    "Use vat only for real VAT numbers and cf only for real Italian fiscal codes.",
+    "Italian fiscal codes and VAT numbers are not sensitive in this DB context: choose none for them.",
     "If the field is not clearly sensitive, choose none.",
     "Do not add extra text."
   ].join(" ");
