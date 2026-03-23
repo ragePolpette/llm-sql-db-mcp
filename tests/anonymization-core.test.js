@@ -2,13 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { anonymizeRows, __anonymizationCoreTestUtils } from "../src/lib/anonymizer.js";
 
-test("anonymizeRows deterministically masks obvious sensitive keys without provider calls", async () => {
+test("anonymizeRows preserves cf and partita iva while still masking real sensitive keys", async () => {
   const rows = await anonymizeRows(
     [
       {
         Id: 1,
         Email: "mario.rossi@example.com",
         PartitaIva: "12345678901",
+        CodiceFiscale: "RSSMRA80A01H501U",
         Telefono: "+39 333 1234567"
       }
     ],
@@ -26,7 +27,8 @@ test("anonymizeRows deterministically masks obvious sensitive keys without provi
 
   assert.equal(rows[0].Id, 1);
   assert.match(rows[0].Email, /^user_[a-f0-9]{10}@example\.invalid$/);
-  assert.match(rows[0].PartitaIva, /^VAT_[A-F0-9]{12}$/);
+  assert.equal(rows[0].PartitaIva, "12345678901");
+  assert.equal(rows[0].CodiceFiscale, "RSSMRA80A01H501U");
   assert.match(rows[0].Telefono, /^\+39\d{10}$/);
 });
 
