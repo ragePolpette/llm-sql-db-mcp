@@ -32,7 +32,10 @@ const SAFE_EXACT_KEYS = new Set([
   "timestamp",
   "ts",
   "date",
-  "data"
+  "data",
+  "estero",
+  "numrif",
+  "num_rif"
 ]);
 
 const SAFE_KEY_TOKENS = new Set([
@@ -51,7 +54,32 @@ const SAFE_KEY_TOKENS = new Set([
   "deleted",
   "timestamp",
   "date",
-  "data"
+  "data",
+  "flag",
+  "stato",
+  "tipo"
+]);
+
+const FLAG_LITERALS = new Set(["0", "1", "y", "n", "s", "no", "si", "yes", "true", "false", "t", "f"]);
+const TECHNICAL_CODE_REGEXES = [
+  /^[A-Z]{1,5}\d{4,}[A-Z0-9_-]*$/i,
+  /^[A-Z0-9]{1,6}[-_/][A-Z0-9_-]{2,}$/i
+];
+const TECHNICAL_CODE_TOKENS = new Set([
+  "codice",
+  "code",
+  "num",
+  "numero",
+  "rif",
+  "numrif",
+  "order",
+  "ordine",
+  "protocollo",
+  "conto",
+  "flag",
+  "stato",
+  "tipo",
+  "estero"
 ]);
 
 const EXACT_KEY_KIND = new Map([
@@ -121,6 +149,91 @@ function hasAnyToken(tokens, candidates) {
     }
   }
   return false;
+}
+
+function normalizeScalar(value) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+}
+
+function buildColumnProfiles(rows) {
+  const profiles = new Map();
+  for (const row of rows) {
+    if (!isObject(row)) continue;
+    for (const [key, rawValue] of Object.entries(row)) {
+      const normalizedKey = normalizeKey(key);
+      if (!normalizedKey) continue;
+      let profile = profiles.get(normalizedKey);
+      if (!profile) {
+        profile = {
+          key,
+          normalizedKey,
+          values: [],
+          distinct: new Set()
+        };
+        profiles.set(normalizedKey, profile);
+      }
+      if (rawValue === null || rawValue === undefined || rawValue === "") continue;
+      const value = normalizeScalar(rawValue);
+      if (!value) continue;
+      profile.values.push(value);
+      if (profile.distinct.size < 16) {
+        profile.distinct.add(value);
+      }
+    }
+  }
+  return profiles;
+}
+
+function isStructuredTechnicalCode(value) {
+  const text = normalizeScalar(value);
+  if (!text || text.includes("@")) return false;
+  return TECHNICAL_CODE_REGEXES.some(regex => regex.test(text));
+}
+
+function isFlagLikeProfile(profile) {
+  if (!profile || profile.values.length === 0) return false;
+  if (profile.distinct.size > 4) return false;
+  return [...profile.distinct].every(value => {
+    const normalized = normalizeScalar(value).toLowerCase();
+    return normalized.length > 0 && normalized.length <= 5 && FLAG_LITERALS.has(normalized);
+  });
+}
+
+function isStructuredTechnicalCodeProfile(normalizedKey, profile) {
+  if (!profile || profile.values.length === 0) return false;
+  const tokens = tokenSetFromKey(normalizedKey);
+  const technicalByName =
+    SAFE_EXACT_KEYS.has(normalizedKey) ||
+    hasAnyToken(tokens, [...TECHNICAL_CODE_TOKENS]);
+  if (!technicalByName) return false;
+  return profile.values.every(isStructuredTechnicalCode);
+}
+
+function isShortEnumProfile(normalizedKey, profile) {
+  if (!profile || profile.values.length < 2) return false;
+  const tokens = tokenSetFromKey(normalizedKey);
+  const technicalByName =
+    SAFE_EXACT_KEYS.has(normalizedKey) ||
+    hasAnyToken(tokens, ["status", "stato", "type", "tipo", "flag", "estero"]);
+  if (!technicalByName) return false;
+  if (profile.distinct.size === 0 || profile.distinct.size > 6) return false;
+  return [...profile.distinct].every(value => {
+    const text = normalizeScalar(value);
+    return text.length > 0 && text.length <= 16 && !/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text);
+  });
+}
+
+function isTechnicalSafeColumn(key, value, columnProfiles) {
+  const normalizedKey = normalizeKey(key);
+  if (!normalizedKey) return false;
+  if (isExplicitlySafeKey(key)) return true;
+  const profile = columnProfiles?.get(normalizedKey) || null;
+  if (SAFE_EXACT_KEYS.has(normalizedKey)) return true;
+  if (profile && (isFlagLikeProfile(profile) || isStructuredTechnicalCodeProfile(normalizedKey, profile) || isShortEnumProfile(normalizedKey, profile))) {
+    return true;
+  }
+  return isStructuredTechnicalCode(value) && hasAnyToken(tokenSetFromKey(normalizedKey), [...TECHNICAL_CODE_TOKENS]);
 }
 
 function getHashSalt(cfg) {
@@ -365,10 +478,10 @@ function resolveKindForKey(key, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE) {
   return inferKindHeuristic(key);
 }
 
-function resolveKindForValue(key, value, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE) {
+function resolveKindForValue(key, value, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE, columnProfiles = null) {
   const kind = resolveKindForKey(key, fieldKindMap, cacheScope);
   if (kind) return kind;
-  if (isExplicitlySafeKey(key)) return null;
+  if (isTechnicalSafeColumn(key, value, columnProfiles)) return NONE_KIND;
   if (typeof value === "string" && value.trim()) {
     return "text";
   }
@@ -413,7 +526,7 @@ function maskInlineWithHashes(value, cfg) {
     .replace(PHONE_TEXT_REGEX, match => toPhoneFromDigest(salt, "inline_phone", match));
 }
 
-function deterministicFallback(rows, cfg, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE) {
+function deterministicFallback(rows, cfg, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE, columnProfiles = null) {
   return rows.map(row => {
     if (!isObject(row)) return row;
 
@@ -422,7 +535,7 @@ function deterministicFallback(rows, cfg, fieldKindMap, cacheScope = GLOBAL_CACH
       const value = out[key];
       if (value === null || value === undefined) continue;
 
-      const kind = resolveKindForValue(key, value, fieldKindMap, cacheScope);
+      const kind = resolveKindForValue(key, value, fieldKindMap, cacheScope, columnProfiles);
       if (kind === NONE_KIND) {
         continue;
       }
@@ -431,7 +544,7 @@ function deterministicFallback(rows, cfg, fieldKindMap, cacheScope = GLOBAL_CACH
         continue;
       }
 
-      if (typeof value === "string" && !isExplicitlySafeKey(key)) {
+      if (typeof value === "string" && !isTechnicalSafeColumn(key, value, columnProfiles)) {
         out[key] = maskInlineWithHashes(value, cfg);
       }
     }
@@ -439,7 +552,7 @@ function deterministicFallback(rows, cfg, fieldKindMap, cacheScope = GLOBAL_CACH
   });
 }
 
-function buildFieldProbePayload(rows) {
+function buildFieldProbePayload(rows, columnProfiles = null) {
   const keys = new Set();
   for (const row of rows) {
     if (!isObject(row)) continue;
@@ -449,12 +562,25 @@ function buildFieldProbePayload(rows) {
   }
 
   const firstObject = rows.find(row => isObject(row)) || {};
-  return [...keys].map(key => ({
-    key,
-    sample: firstObject[key] === null || firstObject[key] === undefined
-      ? null
-      : String(firstObject[key]).slice(0, 80)
-  })).slice(0, 400);
+  return [...keys].map(key => {
+    const normalizedKey = normalizeKey(key);
+    const profile = columnProfiles?.get(normalizedKey) || null;
+    return {
+      key,
+      sample: firstObject[key] === null || firstObject[key] === undefined
+        ? null
+        : String(firstObject[key]).slice(0, 80),
+      samples: profile ? [...profile.distinct].slice(0, 5) : [],
+      distinct_count: profile ? profile.distinct.size : 0,
+      technical_hint: profile
+        ? {
+            flag_like: isFlagLikeProfile(profile),
+            structured_code_like: isStructuredTechnicalCodeProfile(normalizedKey, profile),
+            enum_like: isShortEnumProfile(normalizedKey, profile)
+          }
+        : undefined
+    };
+  }).slice(0, 400);
 }
 
 async function promptProvider(cfg, systemPrompt, userPrompt, fetchImpl) {
@@ -478,8 +604,8 @@ async function promptProvider(cfg, systemPrompt, userPrompt, fetchImpl) {
   throw new Error(`Unsupported anonymization provider: ${cfg.provider}`);
 }
 
-async function identifyFieldsWithProvider(rows, cfg, fetchImpl, cacheScope = GLOBAL_CACHE_SCOPE) {
-  const payload = buildFieldProbePayload(rows);
+async function identifyFieldsWithProvider(rows, cfg, fetchImpl, cacheScope = GLOBAL_CACHE_SCOPE, columnProfiles = null) {
+  const payload = buildFieldProbePayload(rows, columnProfiles);
   if (payload.length === 0) return new Map();
 
   const unknown = payload.filter(entry => !getCachedKindDecision(normalizeKey(entry.key), cacheScope));
@@ -497,8 +623,8 @@ async function identifyFieldsWithProvider(rows, cfg, fetchImpl, cacheScope = GLO
     "Classify database fields for anonymization.",
     "Return ONLY valid JSON in the format {\"fields\":{\"<key>\":\"<kind>\"}}.",
     "Allowed kinds: email, phone, cf, vat, name, org, address, city, text, none.",
-    "Use none for technical, administrative, accounting, numeric, or descriptive fields that are not clearly personal or organization-identifying.",
-    "Typical none examples: id, codice, conto, numero documento, protocollo, stato, tipo, flag, data, timestamp, importo, aliquota, descrizione contabile, causale, riferimento amministrativo, note tecniche, internal classification fields.",
+    "Use none for technical, administrative, accounting, numeric, enumerated, or descriptive fields that are not clearly personal or organization-identifying.",
+    "Typical none examples: id, codice, conto, numero documento, protocollo, stato, tipo, flag, data, timestamp, importo, aliquota, descrizione contabile, causale, riferimento amministrativo, note tecniche, internal classification fields, fixed codes like OQ00000009, and flags like 0/1 or Y/N.",
     "Use text only when the free text can reasonably contain personal data or sensitive organization data in clear text.",
     "Do not use text as a generic fallback for every description field.",
     "Use org only for real company or institution names.",
@@ -532,7 +658,7 @@ async function identifyFieldsWithProvider(rows, cfg, fetchImpl, cacheScope = GLO
   return resolved;
 }
 
-async function resolveFieldKinds(rows, cfg, cacheScope = GLOBAL_CACHE_SCOPE, fetchImpl = globalThis.fetch) {
+async function resolveFieldKinds(rows, cfg, cacheScope = GLOBAL_CACHE_SCOPE, fetchImpl = globalThis.fetch, columnProfiles = null) {
   const mode = String(cfg?.mode || "hybrid").toLowerCase();
   const strategy = String(cfg?.fieldIdentification || "hybrid").toLowerCase();
   const provider = String(cfg?.provider || "").toLowerCase();
@@ -554,7 +680,7 @@ async function resolveFieldKinds(rows, cfg, cacheScope = GLOBAL_CACHE_SCOPE, fet
   }
 
   try {
-    return await identifyFieldsWithProvider(rows, cfg, fetchImpl, cacheScope);
+    return await identifyFieldsWithProvider(rows, cfg, fetchImpl, cacheScope, columnProfiles);
   } catch {
     if (requireLlmClassification || strategy === "llm") {
       throw new Error("Field identification LLM failed.");
@@ -568,6 +694,7 @@ export async function anonymizeRows(rows, cfg, options = {}) {
 
   const mode = String(cfg?.mode || "hybrid").toLowerCase();
   const cacheScope = deriveCacheScopeFromSql(options?.sqlText);
+  const columnProfiles = buildColumnProfiles(rows);
 
   let fieldKindMap = new Map();
   try {
@@ -575,7 +702,8 @@ export async function anonymizeRows(rows, cfg, options = {}) {
       rows,
       { ...cfg, sqlText: options?.sqlText },
       cacheScope,
-      options?.fetchImpl ?? globalThis.fetch
+      options?.fetchImpl ?? globalThis.fetch,
+      columnProfiles
     );
   } catch (error) {
     if (mode === "llm-strict" && !cfg?.failOpen) {
@@ -583,7 +711,7 @@ export async function anonymizeRows(rows, cfg, options = {}) {
     }
   }
 
-  return deterministicFallback(rows, cfg, fieldKindMap, cacheScope);
+  return deterministicFallback(rows, cfg, fieldKindMap, cacheScope, columnProfiles);
 }
 
 export const __anonymizationCoreTestUtils = {
