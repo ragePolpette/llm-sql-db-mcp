@@ -30,6 +30,52 @@ test("anonymizeRows deterministically masks obvious sensitive keys without provi
   assert.match(rows[0].Telefono, /^\+39\d{10}$/);
 });
 
+test("anonymizeRows preserves technical flags and generated references", async () => {
+  const rows = await anonymizeRows(
+    [
+      {
+        Estero: "0",
+        numrif: "OQ00000009"
+      }
+    ],
+    {
+      provider: "none",
+      mode: "deterministic",
+      fieldIdentification: "heuristic",
+      hashSalt: "Super-Secret-Hash-Salt-123!",
+      failOpen: false,
+      timeoutMs: 5000,
+      model: "",
+      baseUrl: ""
+    }
+  );
+
+  assert.equal(rows[0].Estero, "0");
+  assert.equal(rows[0].numrif, "OQ00000009");
+});
+
+test("anonymizeRows preserves structured operational codes", async () => {
+  const rows = await anonymizeRows(
+    [
+      {
+        codice_ordine: "OQ00000010"
+      }
+    ],
+    {
+      provider: "none",
+      mode: "deterministic",
+      fieldIdentification: "heuristic",
+      hashSalt: "Super-Secret-Hash-Salt-123!",
+      failOpen: false,
+      timeoutMs: 5000,
+      model: "",
+      baseUrl: ""
+    }
+  );
+
+  assert.equal(rows[0].codice_ordine, "OQ00000010");
+});
+
 test("anonymizeRows uses LM classification and keeps deterministic output", async () => {
   const rows = await anonymizeRows(
     [
