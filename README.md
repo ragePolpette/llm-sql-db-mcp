@@ -8,6 +8,7 @@ Supportato:
 - SQL Server soltanto
 - target multipli via `targets.json`
 - tool MCP fissi: `db_target_list`, `db_target_info`, `db_policy_info`, `db_read`, `db_write`
+- tool diagnostico opzionale: `run_diagnostic_query`
 - policy target-aware
 - anonimizzazione target-aware con pipeline deterministica riusabile
 - provider `lmstudio` e `ollama` usati per identificazione campi sensibili dove richiesto
@@ -106,6 +107,8 @@ Nota:
 - `direct` resta accettato come alias legacy ma viene trattato come `llm-strict`
 
 ## Tool MCP
+
+Nota harness: `run_diagnostic_query` vive in questo repo perché orchestra i tool target-based esistenti (`db_read`, policy e registry) e mantiene un contract unico. I repo legacy `llm-db-dev-mcp` e `llm-db-prod-mcp` restano invariati.
 
 ### `db_target_list`
 
