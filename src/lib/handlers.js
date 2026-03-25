@@ -43,6 +43,61 @@ function resolveEffectiveMaxRows(requestedMaxRows, targetMaxRows) {
 
   return Math.min(requestedMaxRows, targetMaxRows);
 }
+function resolveDiagnosticTarget(targetRegistry, databaseTarget) {
+  const matches = targetRegistry.list().filter(target => target.environment === databaseTarget);
+  const activeMatches = matches.filter(target => target.status === 'active');
+
+  if (activeMatches.length === 0) {
+    return {
+      target: null,
+      blockers: ['No active target found for database_target "' + databaseTarget + '".']
+    };
+  }
+
+  const resolvedTarget = [...activeMatches].sort((left, right) =>
+    left.target_id.localeCompare(right.target_id)
+  )[0];
+
+  if (activeMatches.length > 1) {
+    return {
+      target: resolvedTarget,
+      blockers: [
+        'Multiple active targets matched database_target "' + databaseTarget + '"; using target_id "' + resolvedTarget.target_id + '".'
+      ]
+    };
+  }
+
+  return {
+    target: resolvedTarget,
+    blockers: []
+  };
+}
+
+function createDiagnosticSummary({ target, databaseTarget, ticketKey, phase, result }) {
+  const rows = Array.isArray(result?.rows) ? result.rows : [];
+  const columns = Array.isArray(result?.columns) ? result.columns : [];
+
+  return {
+    target_id: target?.target_id ?? null,
+    database_target: databaseTarget,
+    ticket_key: ticketKey,
+    phase,
+    row_count: result?.row_count ?? 0,
+    total_rows_before_limits: result?.total_rows_before_limits ?? 0,
+    truncated: result?.truncated ?? false,
+    anonymization_applied: result?.anonymization_applied ?? false,
+    anonymization_provider: result?.anonymization_provider ?? 'none',
+    column_names: columns.map(column => column.name),
+    sample_rows: rows.slice(0, 3),
+    duration_ms: result?.duration_ms ?? 0
+  };
+}
+
+function extractBlockerText(result) {
+  const text = result?.content?.[0]?.text;
+  return typeof text === 'string' && text.trim() ? text.trim() : 'Diagnostic query failed.';
+}
+
 
 function getConnectionString(target, env) {
   const connectionString = env[target.connection_env_var];
@@ -65,7 +120,38 @@ export function createHandlers({
   fetchImpl = globalThis.fetch,
   logDbEvent = null
 }) {
-  return {
+  const handlers = {
+    async dbToolInfo() {
+      return createJsonResult({
+        server: "llm-sql-db-mcp",
+        purpose: "Gateway target-based verso SQL Server con policy, anonimizzazione e diagnostica uniforme.",
+        tool_map: {
+          discovery: ["db_tool_info", "db_target_list", "db_target_info", "db_policy_info"],
+          read: ["db_read", "run_diagnostic_query"],
+          write: ["db_write"]
+        },
+        usage_notes: {
+          db_target_list: "Punto di ingresso per vedere i target configurati senza esporre secret.",
+          db_target_info: "Mostra limiti, anonimizzazione e tool consentiti per un target_id.",
+          db_policy_info: "Spiega se un tool e' permesso e se richiede anonimizzazione.",
+          db_read: "Usa target_id esplicito e solo SQL read-safe.",
+          db_write: "Usa target_id esplicito; disponibile solo se il target abilita la write policy.",
+          run_diagnostic_query:
+            "Wrapper harness-friendly: risolve dev/prod su un target reale e normalizza l'output diagnostico."
+        },
+        target_selection_flow: [
+          "Chiama db_target_list",
+          "Scegli il target_id esplicito oppure usa run_diagnostic_query con database_target=dev|prod",
+          "Verifica policy e limiti con db_target_info/db_policy_info prima di query sensibili"
+        ],
+        boundaries: [
+          "Non espone connection string o altri secret runtime.",
+          "Non usa target impliciti per db_read/db_write.",
+          "I repo legacy llm-db-dev-mcp e llm-db-prod-mcp non fanno parte di questo contract."
+        ]
+      });
+    },
+
     async dbTargetList() {
       return createJsonResult({
         targets: targetRegistry.list().map(toSafeTargetSummary)
@@ -271,6 +357,89 @@ export function createHandlers({
           tool_name: "db_write"
         });
       }
+    },
+
+    async runDiagnosticQuery({
+      database_target: databaseTarget,
+      ticket_key: ticketKey,
+      phase,
+      query,
+      parameters = {}
+    }) {
+      const resolved = resolveDiagnosticTarget(targetRegistry, databaseTarget);
+      const blockers = [...resolved.blockers];
+
+      if (!resolved.target) {
+        return createJsonResult({
+          used: {
+            database_target: databaseTarget,
+            target_id: null,
+            ticket_key: ticketKey,
+            phase,
+            tool_name: 'db_read'
+          },
+          rows: [],
+          summary: createDiagnosticSummary({
+            target: null,
+            databaseTarget,
+            ticketKey,
+            phase,
+            result: { rows: [] }
+          }),
+          blockers
+        });
+      }
+
+      const readResult = await handlers.dbRead({
+        target_id: resolved.target.target_id,
+        sql: query,
+        parameters
+      });
+
+      if (readResult.isError) {
+        blockers.push(extractBlockerText(readResult));
+        return createJsonResult({
+          used: {
+            database_target: databaseTarget,
+            target_id: resolved.target.target_id,
+            ticket_key: ticketKey,
+            phase,
+            tool_name: 'db_read'
+          },
+          rows: [],
+          summary: createDiagnosticSummary({
+            target: resolved.target,
+            databaseTarget,
+            ticketKey,
+            phase,
+            result: {}
+          }),
+          blockers
+        });
+      }
+
+      const structured = readResult.structuredContent ?? {};
+      return createJsonResult({
+        used: {
+          database_target: databaseTarget,
+          target_id: resolved.target.target_id,
+          ticket_key: ticketKey,
+          phase,
+          tool_name: 'db_read'
+        },
+        rows: Array.isArray(structured.rows) ? structured.rows : [],
+        summary: createDiagnosticSummary({
+          target: resolved.target,
+          databaseTarget,
+          ticketKey,
+          phase,
+          result: structured
+        }),
+        blockers
+      });
     }
+
   };
+
+  return handlers;
 }
