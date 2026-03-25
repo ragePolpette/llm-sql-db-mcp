@@ -52,8 +52,12 @@ test("integration: health, tool surface, target tools, and db_read error path wo
     const tools = await client.listTools();
     assert.deepEqual(
       tools.tools.map(tool => tool.name).sort(),
-      ["db_policy_info", "db_read", "db_target_info", "db_target_list", "db_write"]
+      ["db_policy_info", "db_read", "db_target_info", "db_target_list", "db_tool_info", "db_write", "run_diagnostic_query"]
     );
+
+    const toolInfo = await client.callTool({ name: "db_tool_info", arguments: {} });
+    assert.equal(toolInfo.structuredContent.server, "llm-sql-db-mcp");
+    assert.ok(toolInfo.structuredContent.tool_map.discovery.includes("db_target_list"));
 
     const targetList = await client.callTool({ name: "db_target_list", arguments: {} });
     assert.equal(targetList.structuredContent.targets.length, 2);
