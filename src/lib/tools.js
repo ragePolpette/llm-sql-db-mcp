@@ -30,7 +30,59 @@ const policyRowSchema = z.object({
   denial_reason: z.string().nullable()
 });
 
+const diagnosticUsedSchema = z.object({
+  database_target: z.enum(['dev', 'prod']),
+  target_id: z.string().nullable(),
+  ticket_key: z.string(),
+  phase: z.enum(['triage', 'execution']),
+  tool_name: z.literal('db_read')
+});
+
+const diagnosticSummarySchema = z.object({
+  target_id: z.string().nullable(),
+  database_target: z.enum(['dev', 'prod']),
+  ticket_key: z.string(),
+  phase: z.enum(['triage', 'execution']),
+  row_count: z.number().int().nonnegative(),
+  total_rows_before_limits: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+  anonymization_applied: z.boolean(),
+  anonymization_provider: z.string(),
+  column_names: z.array(z.string()),
+  sample_rows: z.array(z.record(z.string(), z.unknown())),
+  duration_ms: z.number().int().nonnegative()
+});
+
+const diagnosticToolOutputSchema = z.object({
+  used: diagnosticUsedSchema,
+  rows: z.array(z.record(z.string(), z.unknown())),
+  summary: diagnosticSummarySchema,
+  blockers: z.array(z.string())
+});
+
 export function registerFixedTools(server, handlers) {
+  server.registerTool(
+    "db_tool_info",
+    {
+      title: "Get Database Tool Info",
+      description: "Return the global tool map, target selection flow, and usage notes for this target-based SQL MCP.",
+      inputSchema: {},
+      outputSchema: {
+        server: z.string(),
+        purpose: z.string(),
+        tool_map: z.record(z.string(), z.array(z.string())),
+        usage_notes: z.record(z.string(), z.string()),
+        target_selection_flow: z.array(z.string()),
+        boundaries: z.array(z.string())
+      },
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false
+      }
+    },
+    handlers.dbToolInfo
+  );
+
   server.registerTool(
     "db_target_list",
     {
@@ -160,6 +212,33 @@ export function registerFixedTools(server, handlers) {
       }
     },
     handlers.dbRead
+  );
+
+  server.registerTool(
+    'run_diagnostic_query',
+    {
+      title: 'Run Diagnostic Query',
+      description: 'Resolve a dev/prod database target, run the query through db_read, and return a compact diagnostic payload for harness use.',
+      inputSchema: {
+        database_target: z.enum(['dev', 'prod']).describe('Logical harness target to resolve to a real target_id.'),
+        ticket_key: z.string().min(1).describe('Stable ticket identifier used by the harness.'),
+        phase: z.enum(['triage', 'execution']).describe('Harness phase for the diagnostic request.'),
+        query: z.string().min(1).describe('SQL text passed to db_read after target resolution.'),
+        parameters: z
+          .record(
+            z.string(),
+            z.union([z.string(), z.number(), z.boolean(), z.null()])
+          )
+          .optional()
+          .describe('Optional named SQL parameters.')
+      },
+      outputSchema: diagnosticToolOutputSchema,
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false
+      }
+    },
+    handlers.runDiagnosticQuery
   );
 
   server.registerTool(
