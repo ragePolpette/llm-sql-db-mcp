@@ -50,7 +50,7 @@ Obiettivo: eliminare i punti che oggi fanno sembrare il tool rischioso o incompl
   - niente parametri raw nei log di default
   - niente dump completo del SQL in produzione locale "normale"
 - [x] Introdurre livelli di logging espliciti (`error`, `info`, `debug`) con redaction coerente.
-- [ ] Chiudere esplicitamente i pool SQL Server nello shutdown del server.
+- [x] Chiudere esplicitamente i pool SQL Server nello shutdown del server.
 - [ ] Introdurre timeout DB espliciti per query e connessioni.
 - [ ] Introdurre configurazione minima del pool DB (`max`, `min`, `idleTimeoutMillis` o equivalente `mssql`).
 - [ ] Rendere `run_diagnostic_query` non ambiguo con registry dinamico.
@@ -141,7 +141,7 @@ Usare questa sezione durante il lavoro per collegare gli item alle PR.
 | Item | Branch | PR | Stato | Note |
 |---|---|---|---|---|
 | P0 logging redaction | feature/p0-redacted-logging |  | Ready for PR | logging redatto + log levels espliciti + check/test ok |
-| P0 DB shutdown + pool close |  |  | Todo |  |
+| P0 DB shutdown + pool close | feature/p0-db-shutdown-pool-close |  | Ready for PR | runtime.stop chiude le pool SQL + test lifecycle + check/test ok |
 | P0 DB timeout + pool config |  |  | Todo |  |
 | P0 diagnostic target resolution |  |  | Todo |  |
 | P0 session TTL policy |  |  | Todo |  |

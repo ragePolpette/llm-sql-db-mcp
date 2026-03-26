@@ -8,7 +8,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { anonymizeQueryResult } from "./lib/anonymizer.js";
 import { isOriginAllowed, loadRuntimeConfig } from "./lib/config.js";
-import { executeSqlServerRead, executeSqlServerWrite } from "./lib/drivers/sqlserver.js";
+import { closeSqlServerPools, executeSqlServerRead, executeSqlServerWrite } from "./lib/drivers/sqlserver.js";
 import { createHandlers } from "./lib/handlers.js";
 import { createLogger } from "./lib/logger.js";
 import { registerFixedTools } from "./lib/tools.js";
@@ -50,7 +50,7 @@ async function safeCloseTransport(transport, sessionId) {
 
 const fallbackLogger = createLogger();
 
-export async function createApp({ cwd = process.cwd() } = {}) {
+export async function createApp({ cwd = process.cwd(), closeSqlPools = closeSqlServerPools } = {}) {
   const config = loadRuntimeConfig({ cwd });
   const logger = createLogger({
     level: config.logLevel
@@ -236,6 +236,14 @@ export async function createApp({ cwd = process.cwd() } = {}) {
             error: error.message
           });
         }
+      }
+
+      try {
+        await closeSqlPools();
+      } catch (error) {
+        logger.error("db.pool_close_failed", {
+          error: error.message
+        });
       }
     }
   };
