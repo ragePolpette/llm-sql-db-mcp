@@ -57,8 +57,8 @@ Obiettivo: eliminare i punti che oggi fanno sembrare il tool rischioso o incompl
   Opzioni accettabili:
   - richiedere `target_id` esplicito nel path diagnostico
   - oppure fallire se piu' target attivi matchano lo stesso environment
-- [ ] Impostare un default piu' sano per `SESSION_TTL_MS` oppure documentare in modo molto chiaro il default infinito.
-- [ ] Aggiungere test sui nuovi comportamenti di logging, shutdown, timeout e diagnostica non ambigua.
+- [x] Impostare un default piu' sano per `SESSION_TTL_MS` oppure documentare in modo molto chiaro il default infinito.
+- [x] Aggiungere test sui nuovi comportamenti di logging, shutdown, timeout e diagnostica non ambigua.
 
 ## P1 - Repo Serio E Portfolio Ready
 
@@ -144,7 +144,7 @@ Usare questa sezione durante il lavoro per collegare gli item alle PR.
 | P0 DB shutdown + pool close | feature/p0-db-shutdown-pool-close |  | Ready for PR | runtime.stop chiude le pool SQL + test lifecycle + check/test ok |
 | P0 DB timeout + pool config | feature/p0-db-timeout-pool-config |  | Ready for PR | config runtime SQL esplicita + mapping driver + test + check/test ok |
 | P0 diagnostic target resolution | feature/p0-diagnostic-target-resolution |  | Ready for PR | il tool diagnostico fallisce su target multipli attivi invece di sceglierne uno + check/test ok |
-| P0 session TTL policy |  |  | Todo |  |
+| P0 session TTL policy | feature/p0-session-ttl-policy |  | Ready for PR | default TTL a 30 minuti, `0` resta override esplicito, test aggiunti + check/test ok |
 | P1 README hardening |  |  | Todo |  |
 | P1 SECURITY.md |  |  | Todo |  |
 | P1 CONTRIBUTING.md + LICENSE |  |  | Todo |  |
