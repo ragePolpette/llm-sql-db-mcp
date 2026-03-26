@@ -3,13 +3,85 @@ import assert from "node:assert/strict";
 import { TargetRegistry } from "../src/lib/target-registry.js";
 import { createHandlers } from "../src/lib/handlers.js";
 
+function createTarget({
+  target_id,
+  display_name,
+  environment,
+  status,
+  connection_env_var,
+  read_enabled,
+  write_enabled,
+  anonymization_enabled,
+  anonymization_mode,
+  llm_provider,
+  llm_model,
+  max_rows,
+  max_result_bytes,
+  allowed_tools
+}) {
+  return {
+    target_id,
+    display_name,
+    environment,
+    db_kind: "sqlserver",
+    status,
+    connection_env_var,
+    connection_binding: {
+      source: "env",
+      env_var: connection_env_var,
+      vault_ref: null
+    },
+    read_enabled,
+    write_enabled,
+    anonymization_enabled,
+    anonymization_mode,
+    llm_provider,
+    llm_model,
+    max_rows,
+    max_result_bytes,
+    allowed_tools,
+    declared: {
+      read_enabled,
+      write_enabled,
+      anonymization_enabled,
+      anonymization_mode,
+      llm_provider,
+      llm_model,
+      max_rows,
+      max_result_bytes,
+      allowed_tools
+    },
+    effective: {
+      read_enabled,
+      write_enabled,
+      anonymization_enabled,
+      anonymization_mode,
+      llm_provider,
+      llm_model,
+      max_rows,
+      max_result_bytes,
+      allowed_tools
+    },
+    policy: {
+      read_enabled,
+      write_enabled,
+      anonymization_enabled,
+      anonymization_mode,
+      llm_provider,
+      llm_model,
+      max_rows,
+      max_result_bytes,
+      allowed_tools
+    }
+  };
+}
+
 function createTestRegistry() {
   return new TargetRegistry([
-    {
+    createTarget({
       target_id: "dev-main",
       display_name: "Dev Main",
       environment: "dev",
-      db_kind: "sqlserver",
       status: "active",
       connection_env_var: "DB_DEV_MAIN_CONNECTION_STRING",
       read_enabled: true,
@@ -21,12 +93,11 @@ function createTestRegistry() {
       max_rows: 5,
       max_result_bytes: 1024,
       allowed_tools: ["db_target_info", "db_policy_info", "db_read", "db_write"]
-    },
-    {
+    }),
+    createTarget({
       target_id: "prod-main",
       display_name: "Prod Main",
       environment: "prod",
-      db_kind: "sqlserver",
       status: "active",
       connection_env_var: "DB_PROD_MAIN_CONNECTION_STRING",
       read_enabled: true,
@@ -38,7 +109,7 @@ function createTestRegistry() {
       max_rows: 5,
       max_result_bytes: 1024,
       allowed_tools: ["db_target_info", "db_policy_info", "db_read", "db_write"]
-    }
+    })
   ]);
 }
 
@@ -261,7 +332,7 @@ test("dbWrite executes a write statement when target write is enabled", async ()
   assert.equal(result.structuredContent.rows_affected, 1);
 });
 
-test("dbWrite is denied when target write is disabled", async () => {
+test("dbWrite is denied for prod targets by the hard fence", async () => {
   const handlers = createHandlers({
     targetRegistry: createTestRegistry(),
     env: {
@@ -281,5 +352,5 @@ test("dbWrite is denied when target write is disabled", async () => {
   });
 
   assert.equal(result.isError, true);
-  assert.match(result.content[0].text, /Write access is disabled/i);
+  assert.match(result.content[0].text, /hard-fenced off for production target/i);
 });
