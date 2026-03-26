@@ -67,6 +67,7 @@ Aggiornare la documentazione quando cambia uno di questi aspetti:
 - policy o limiti di sicurezza
 
 I file principali da tenere coerenti sono:
+- [AGENTS.md](./AGENTS.md)
 - [README.md](./README.md)
 - [SECURITY.md](./SECURITY.md)
 - [docs/PRODUCT_ROADMAP_CHECKLIST.md](./docs/PRODUCT_ROADMAP_CHECKLIST.md)
