@@ -48,6 +48,19 @@ test("integration: health, tool surface, target tools, and db_read error path wo
     assert.equal(healthResponse.status, 200);
     assert.equal(healthPayload.target_count, 2);
 
+    const readinessResponse = await fetch(
+      `http://${runtime.config.host}:${runtime.config.port}${runtime.config.readinessPath}`
+    );
+    const readinessPayload = await readinessResponse.json();
+    assert.equal(readinessResponse.status, 503);
+    assert.equal(readinessPayload.status, "not_ready");
+    assert.equal(readinessPayload.checks.registry_loaded, true);
+    assert.equal(readinessPayload.checks.active_target_count, 2);
+    assert.deepEqual(
+      readinessPayload.checks.active_targets_missing_connection_env.map(target => target.target_id).sort(),
+      ["dev-main", "prod-main"]
+    );
+
     const missingSessionResponse = await fetch(
       `http://${runtime.config.host}:${runtime.config.port}${runtime.config.mcpPath}`
     );

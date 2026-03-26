@@ -75,6 +75,39 @@ async function safeCloseTransport(transport, sessionId) {
 
 const fallbackLogger = createLogger();
 
+function getActiveTargetsMissingConnectionEnv(targetRegistry, env) {
+  return targetRegistry
+    .list()
+    .filter(target => target.status === "active")
+    .filter(target => !env[target.connection_env_var])
+    .map(target => ({
+      target_id: target.target_id,
+      environment: target.environment,
+      connection_env_var: target.connection_env_var
+    }));
+}
+
+function buildReadinessPayload({ config, targetRegistry, env, startedAt }) {
+  const targets = targetRegistry.list();
+  const activeTargets = targets.filter(target => target.status === "active");
+  const missingConnectionEnv = getActiveTargetsMissingConnectionEnv(targetRegistry, env);
+  const ready = activeTargets.length > 0 && missingConnectionEnv.length === 0;
+
+  return {
+    status: ready ? "ready" : "not_ready",
+    service: config.serverName,
+    version: config.serverVersion,
+    uptime_seconds: Math.floor((Date.now() - startedAt.getTime()) / 1000),
+    checks: {
+      config_loaded: true,
+      registry_loaded: true,
+      target_count: targets.length,
+      active_target_count: activeTargets.length,
+      active_targets_missing_connection_env: missingConnectionEnv
+    }
+  };
+}
+
 export async function createApp({ cwd = process.cwd(), closeSqlPools = closeSqlServerPools } = {}) {
   const config = loadRuntimeConfig({ cwd });
   const logger = createLogger({
@@ -124,6 +157,17 @@ export async function createApp({ cwd = process.cwd(), closeSqlPools = closeSqlS
       uptime_seconds: Math.floor((Date.now() - startedAt.getTime()) / 1000),
       target_count: targetRegistry.size
     });
+  });
+
+  app.get(config.readinessPath, (_req, res) => {
+    const payload = buildReadinessPayload({
+      config,
+      targetRegistry,
+      env: process.env,
+      startedAt
+    });
+
+    res.status(payload.status === "ready" ? 200 : 503).json(payload);
   });
 
   const sweepTimer = setInterval(() => {

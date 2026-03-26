@@ -6,6 +6,7 @@ const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3000;
 const DEFAULT_MCP_PATH = "/mcp";
 const DEFAULT_HEALTH_PATH = "/health";
+const DEFAULT_READINESS_PATH = "/ready";
 const DEFAULT_TARGETS_FILE = "targets.json";
 const DEFAULT_SESSION_TTL_MS = 1_800_000;
 const DEFAULT_SWEEP_INTERVAL_MS = 60_000;
@@ -101,6 +102,7 @@ export function loadRuntimeConfig({ cwd = process.cwd(), env = process.env } = {
   const port = parseInteger(env.PORT, DEFAULT_PORT, "PORT");
   const mcpPath = env.MCP_PATH ?? DEFAULT_MCP_PATH;
   const healthPath = env.HEALTH_PATH ?? DEFAULT_HEALTH_PATH;
+  const readinessPath = env.READINESS_PATH ?? DEFAULT_READINESS_PATH;
   const targetsFile = path.resolve(cwd, env.TARGETS_FILE ?? DEFAULT_TARGETS_FILE);
   const sessionTtlMs = parseInteger(env.SESSION_TTL_MS, DEFAULT_SESSION_TTL_MS, "SESSION_TTL_MS");
   const sessionSweepIntervalMs = parseInteger(
@@ -177,6 +179,7 @@ export function loadRuntimeConfig({ cwd = process.cwd(), env = process.env } = {
     port,
     mcpPath,
     healthPath,
+    readinessPath,
     targetsFile,
     sessionTtlMs,
     sessionSweepIntervalMs,

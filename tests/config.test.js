@@ -18,6 +18,7 @@ test("loadRuntimeConfig returns defaults when no .env is present", () => {
 
   assert.equal(config.host, "127.0.0.1");
   assert.equal(config.port, 3000);
+  assert.equal(config.readinessPath, "/ready");
   assert.equal(path.basename(config.targetsFile), "targets.json");
   assert.equal(config.sessionTtlMs, 1_800_000);
   assert.equal(config.providers.fieldIdentification, "hybrid");
