@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { getRequestContext } from "./request-context.js";
 
 const LOG_LEVELS = {
   error: 0,
@@ -93,12 +94,23 @@ function redactDbPayload(event, payload, level) {
 }
 
 function buildEntry(level, event, payload) {
-  return {
+  const context = getRequestContext();
+  const entry = {
     timestamp: new Date().toISOString(),
     level,
     event,
     payload
   };
+
+  if (context?.request_id) {
+    entry.request_id = context.request_id;
+  }
+
+  if (context?.session_id) {
+    entry.session_id = context.session_id;
+  }
+
+  return entry;
 }
 
 export function createLogger({ level = "info", stdout = process.stdout, stderr = process.stderr } = {}) {
