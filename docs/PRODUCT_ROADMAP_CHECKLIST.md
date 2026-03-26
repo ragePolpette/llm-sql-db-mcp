@@ -88,7 +88,7 @@ Obiettivo: far percepire il progetto come prodotto curato, non come harness inte
   - dev read/write
   - prod read-only + anonymization
   - target disabled
-- [ ] Ripulire o contestualizzare i documenti legacy/prompt-oriented dentro `docs/`.
+- [x] Ripulire o contestualizzare i documenti legacy/prompt-oriented dentro `docs/`.
 - [x] Aggiungere una mini roadmap pubblica nel `README` che punti a questo file.
 
 ## P1.5 - Hardening Tecnico Ragionevole
@@ -148,6 +148,7 @@ Usare questa sezione durante il lavoro per collegare gli item alle PR.
 | P1 README hardening | feature/p1-readme-hardening | #11 | Merged | scope, architettura, data flow, limiti, note operative e security model chiariti |
 | P1 SECURITY.md | feature/p1-security-docs | #12 | Merged | threat model leggero, asset protetti, regole operative, secret e target prod chiariti |
 | P1 CONTRIBUTING.md + LICENSE | feature/p1-contributing-license | #13 | Merged | workflow branch->push->PR->merge, safety rules, test expectations e licenza MIT aggiunti |
-| P1 operational notes + target examples | feature/p1-target-examples |  | In progress | example registry con profili dev/prod/disabled e checklist P1 riallineata allo stato reale |
+| P1 operational notes + target examples | feature/p1-target-examples | #14 | Merged | example registry con profili dev/prod/disabled e checklist P1 riallineata allo stato reale |
+| P1 docs cleanup | feature/p1-docs-cleanup |  | In progress | indice `docs/` pubblico e criterio di inclusione per evitare handoff/prompt interni nel repo |
 | P1.5 request id + error model |  |  | Todo |  |
 | P1.5 guard/test hardening |  |  | Todo |  |
