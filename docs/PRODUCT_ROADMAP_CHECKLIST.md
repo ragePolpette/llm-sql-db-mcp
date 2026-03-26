@@ -64,7 +64,7 @@ Obiettivo: eliminare i punti che oggi fanno sembrare il tool rischioso o incompl
 
 Obiettivo: far percepire il progetto come prodotto curato, non come harness interno.
 
-- [ ] Rafforzare il `README.md` con:
+- [x] Rafforzare il `README.md` con:
   - architettura del sistema
   - data flow essenziale
   - target user
@@ -140,12 +140,12 @@ Usare questa sezione durante il lavoro per collegare gli item alle PR.
 
 | Item | Branch | PR | Stato | Note |
 |---|---|---|---|---|
-| P0 logging redaction | feature/p0-redacted-logging |  | Ready for PR | logging redatto + log levels espliciti + check/test ok |
-| P0 DB shutdown + pool close | feature/p0-db-shutdown-pool-close |  | Ready for PR | runtime.stop chiude le pool SQL + test lifecycle + check/test ok |
-| P0 DB timeout + pool config | feature/p0-db-timeout-pool-config |  | Ready for PR | config runtime SQL esplicita + mapping driver + test + check/test ok |
-| P0 diagnostic target resolution | feature/p0-diagnostic-target-resolution |  | Ready for PR | il tool diagnostico fallisce su target multipli attivi invece di sceglierne uno + check/test ok |
-| P0 session TTL policy | feature/p0-session-ttl-policy |  | Ready for PR | default TTL a 30 minuti, `0` resta override esplicito, test aggiunti + check/test ok |
-| P1 README hardening |  |  | Todo |  |
+| P0 logging redaction | feature/p0-redacted-logging | #6 | Merged | logging redatto + log levels espliciti + check/test ok |
+| P0 DB shutdown + pool close | feature/p0-db-shutdown-pool-close | #7 | Merged | runtime.stop chiude le pool SQL + test lifecycle + check/test ok |
+| P0 DB timeout + pool config | feature/p0-db-timeout-pool-config | #8 | Merged | config runtime SQL esplicita + mapping driver + test + check/test ok |
+| P0 diagnostic target resolution | feature/p0-diagnostic-target-resolution | #9 | Merged | il tool diagnostico fallisce su target multipli attivi invece di sceglierne uno + check/test ok |
+| P0 session TTL policy | feature/p0-session-ttl-policy | #10 | Merged | default TTL a 30 minuti, `0` resta override esplicito, test aggiunti + check/test ok |
+| P1 README hardening | feature/p1-readme-hardening |  | In progress | scope, architettura, data flow, limiti, note operative e security model chiariti |
 | P1 SECURITY.md |  |  | Todo |  |
 | P1 CONTRIBUTING.md + LICENSE |  |  | Todo |  |
 | P1.5 request id + error model |  |  | Todo |  |

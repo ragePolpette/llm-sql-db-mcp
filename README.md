@@ -1,21 +1,94 @@
 # llm-sql-db-mcp
 
-MCP server HTTP stateful che espone una surface SQL fissa e policy-driven su piu target SQL Server configurati staticamente.
+MCP server HTTP stateful per SQL Server con surface fissa, target registry dinamico e policy target-aware. Il progetto e' pensato per uso locale o team limitato: mette guard rail pratici attorno a query SQL lette o scritte via MCP, senza trasformarsi in un control plane complesso.
 
-## Stato v1
+## Cosa Fa
 
-Supportato:
-- SQL Server soltanto
-- target multipli via `targets.json`
-- tool MCP fissi: `db_target_list`, `db_target_info`, `db_policy_info`, `db_read`, `db_write`
-- tool diagnostico opzionale: `run_diagnostic_query`
-- policy target-aware
-- anonimizzazione target-aware con pipeline deterministica riusabile
-- provider `lmstudio` e `ollama` usati per identificazione campi sensibili dove richiesto
+Il server espone una surface MCP piccola e stabile per:
+- elencare i target DB configurati
+- ispezionare metadati e policy effettive di un target
+- eseguire query read-safe su target consentiti
+- eseguire write controllate solo sui target che lo permettono
+- applicare anonimizzazione target-aware dove richiesta
 
-Non supportato:
-- MySQL
-- provisioning UI
+L'obiettivo non e' "fare da ORM" o da query engine generico. L'obiettivo e' ridurre il rischio operativo quando un client MCP deve interrogare database SQL Server con policy note e verificabili.
+
+## Target User
+
+Il progetto e' adatto a:
+- uso personale avanzato
+- team ristretto o business unit limitata
+- demo e portfolio pubblico di un MCP serio ma non internet-facing
+
+Non e' progettato oggi per multi-tenancy, esposizione pubblica o deployment enterprise aperto.
+
+## Non-Goals
+
+Fuori scope attuale:
+- supporto database diversi da SQL Server
+- provisioning UI incorporato
+- orchestrazione cloud o deployment internet-facing
+- auth enterprise completa o IAM centralizzato
+- riscrittura del query engine oltre i guard rail necessari
+
+## Architettura
+
+Componenti principali:
+- `src/server.js`: transport HTTP MCP, lifecycle del processo e wiring dei tool
+- `src/lib/config.js`: parsing e validazione della configurazione runtime
+- `src/lib/target-registry.js`: source of truth dei target DB caricati da file
+- `src/lib/policy-engine.js`: decisioni target-aware su read, write e anonimizzazione
+- `src/lib/sql-guard.js`: blocchi lessicali e invarianti per query consentite
+- `src/lib/drivers/sqlserver.js`: integrazione runtime con SQL Server tramite `mssql`
+- `src/lib/anonymization/*`: masking deterministico e classificazione field-aware
+
+La surface MCP resta intenzionalmente piccola:
+- `db_target_list`
+- `db_target_info`
+- `db_policy_info`
+- `db_read`
+- `db_write`
+- `run_diagnostic_query` opzionale
+
+## Data Flow
+
+Flusso essenziale di una richiesta:
+1. il client MCP chiama un tool via HTTP
+2. il server valida sessione, input e target richiesto
+3. il target registry risolve il target e il relativo binding di connessione
+4. il policy engine decide se il tool e' consentito e se serve anonimizzazione
+5. il guard SQL verifica che la query rientri nelle forme ammesse
+6. il driver SQL Server esegue la query con timeout e limiti runtime
+7. se richiesto, la pipeline di anonimizzazione trasforma i valori del result set
+8. il server restituisce un payload MCP coerente e logga solo metadati sicuri
+
+## Security Model Locale
+
+Questo progetto assume un modello di sicurezza pragmatico:
+- il server gira su macchina locale o rete fidata limitata
+- le connection string restano fuori dal repo e fuori dal `.env`
+- i target `environment=prod` devono avere fence non aggirabili
+- i log di default non devono esporre SQL completo, parametri raw o row payload
+- le policy stanno nel registry target, non nella logica del client
+
+In pratica il boundary di sicurezza non e' "esporre il server a internet", ma "ridurre errori e abusi in un contesto locale controllato".
+
+## Limiti Noti
+
+Limiti intenzionali o attuali:
+- solo SQL Server
+- nessuna UI incorporata in questo repo
+- le protezioni SQL restano guard rail applicativi, non sostituiscono permessi DB minimi lato credenziali
+- `/health` e' ancora una liveness semplice, non una readiness completa
+- l'autenticazione forte non e' implementata perche' il target operativo non e' pubblico
+
+## Operational Notes
+
+- Avvio rapido: `npm install` poi `npm start`
+- Smoke test minimo: `npm run check` e `npm test`
+- Rotazione secret runtime: aggiornare solo le env var di connessione o il binding esterno del target, mai committare secret nel repo
+- Disabilitazione target: impostare `status=disabled` nel target registry e riavviare il processo che carica il file
+- Roadmap operativa: vedi [docs/PRODUCT_ROADMAP_CHECKLIST.md](./docs/PRODUCT_ROADMAP_CHECKLIST.md)
 
 ## Requisiti
 
@@ -31,7 +104,7 @@ Non supportato:
 npm install
 ```
 
-2. Verifica o adatta [targets.example.json](/C:/Users/Gianmarco/Urgewalt/Yetzirah/llm-sql-db-mcp/targets.example.json) e [\.env.example](/C:/Users/Gianmarco/Urgewalt/Yetzirah/llm-sql-db-mcp/.env.example).
+2. Verifica o adatta [targets.example.json](./targets.example.json) e [.env.example](./.env.example).
 
 3. Esporta a runtime le connection string richieste dai target, per esempio:
 
@@ -90,13 +163,21 @@ Regola importante:
 
 ## Target Registry
 
-Il server legge i target da [targets.json](/C:/Users/Gianmarco/Urgewalt/Yetzirah/llm-sql-db-mcp/targets.json). Ogni target definisce:
+Il server legge i target da [`targets.json`](./targets.json). Ogni target definisce:
 - `target_id`
+- `display_name`
+- `environment`
+- `status`
 - metadati sicuri
 - env var della connection string
 - limiti read-only
 - allowed tools
 - configurazione anonimizzazione
+
+Esempi tipici:
+- target dev read/write per workflow locale controllato
+- target prod read-only con anonimizzazione obbligatoria
+- target disabled mantenuto nel registry ma non interrogabile
 
 Mode supportati:
 - `off`
