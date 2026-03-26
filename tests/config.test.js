@@ -19,7 +19,7 @@ test("loadRuntimeConfig returns defaults when no .env is present", () => {
   assert.equal(config.host, "127.0.0.1");
   assert.equal(config.port, 3000);
   assert.equal(path.basename(config.targetsFile), "targets.json");
-  assert.equal(config.sessionTtlMs, 0);
+  assert.equal(config.sessionTtlMs, 1_800_000);
   assert.equal(config.providers.fieldIdentification, "hybrid");
   assert.equal(config.providers.timeoutMs, 5000);
 });
@@ -52,6 +52,18 @@ test("loadRuntimeConfig parses LOG_LEVEL and rejects unsupported values", () => 
     () => loadRuntimeConfig({ cwd, env: { LOG_LEVEL: "trace" } }),
     /LOG_LEVEL must be one of/
   );
+});
+
+test("loadRuntimeConfig allows explicit SESSION_TTL_MS=0 to disable expiry", () => {
+  const cwd = createTempDir();
+  const config = loadRuntimeConfig({
+    cwd,
+    env: {
+      SESSION_TTL_MS: "0"
+    }
+  });
+
+  assert.equal(config.sessionTtlMs, 0);
 });
 
 test("loadRuntimeConfig exposes SQL timeout and pool settings", () => {

@@ -62,7 +62,7 @@ Variabili principali:
 - `MCP_PATH`: default `/mcp`
 - `HEALTH_PATH`: default `/health`
 - `TARGETS_FILE`: default `targets.json`
-- `SESSION_TTL_MS`: `0` significa no expiry
+- `SESSION_TTL_MS`: default `1800000` (30 minuti). `0` significa no expiry ed e' consigliato solo per debugging locale controllato
 - `SESSION_SWEEP_INTERVAL_MS`: sweep interval delle sessioni scadute
 - `ALLOW_LOOPBACK_ORIGINS`: consente origin loopback
 - `ALLOWED_ORIGINS`: lista CSV di origin consentiti
@@ -86,6 +86,7 @@ Override runtime per target:
 
 Regola importante:
 - non mettere connection string, API key, password o secret nel file `.env` del progetto; il loader le rifiuta esplicitamente
+- per uso normale il server applica un TTL sessione di default; usare `SESSION_TTL_MS=0` solo se vuoi deliberatamente sessioni MCP persistenti senza scadenza
 
 ## Target Registry
 
