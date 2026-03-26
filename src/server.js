@@ -11,19 +11,44 @@ import { isOriginAllowed, loadRuntimeConfig } from "./lib/config.js";
 import { closeSqlServerPools, executeSqlServerRead, executeSqlServerWrite } from "./lib/drivers/sqlserver.js";
 import { createHandlers } from "./lib/handlers.js";
 import { createLogger } from "./lib/logger.js";
+import { runWithRequestContext } from "./lib/request-context.js";
 import { registerFixedTools } from "./lib/tools.js";
 import { SessionStore } from "./lib/session-store.js";
 import { loadTargetRegistry } from "./lib/target-registry.js";
 
-function createProtocolErrorResponse(res, status, message) {
+function createProtocolErrorResponse(
+  res,
+  { status, jsonRpcCode = -32000, message, errorCode = "internal_error", details = {} }
+) {
+  const requestIdHeader = res.getHeader("x-request-id");
+  const requestId = typeof requestIdHeader === "string" && requestIdHeader.trim() ? requestIdHeader : null;
+  const errorData = {
+    error_code: errorCode,
+    request_id: requestId
+  };
+
+  if (Object.keys(details).length > 0) {
+    errorData.details = details;
+  }
+
   res.status(status).json({
     jsonrpc: "2.0",
     error: {
-      code: -32000,
-      message
+      code: jsonRpcCode,
+      message,
+      data: errorData
     },
     id: null
   });
+}
+
+function resolveRequestId(req) {
+  const headerValue = req.headers["x-request-id"];
+  if (typeof headerValue === "string" && headerValue.trim()) {
+    return headerValue.trim();
+  }
+
+  return randomUUID();
 }
 
 function buildMcpServer(config, dependencies) {
@@ -65,13 +90,29 @@ export async function createApp({ cwd = process.cwd(), closeSqlPools = closeSqlS
   app.disable("x-powered-by");
   app.use(express.json({ limit: "1mb" }));
   app.use((req, res, next) => {
+    const requestId = resolveRequestId(req);
+    const sessionId = typeof req.headers["mcp-session-id"] === "string" ? req.headers["mcp-session-id"] : null;
+    res.setHeader("x-request-id", requestId);
+    runWithRequestContext(
+      {
+        request_id: requestId,
+        session_id: sessionId
+      },
+      next
+    );
+  });
+  app.use((req, res, next) => {
     if (isOriginAllowed(req.headers.origin, config)) {
       next();
       return;
     }
 
     res.status(403).json({
-      error: "Origin not allowed."
+      error: {
+        code: "origin_not_allowed",
+        message: "Origin not allowed.",
+        request_id: res.getHeader("x-request-id") ?? null
+      }
     });
   });
 
@@ -143,7 +184,12 @@ export async function createApp({ cwd = process.cwd(), closeSqlPools = closeSqlS
       if (typeof sessionId === "string") {
         const existingSession = await resolveSession(sessionId);
         if (!existingSession) {
-          createProtocolErrorResponse(res, 404, "Unknown or expired session.");
+          createProtocolErrorResponse(res, {
+            status: 404,
+            jsonRpcCode: -32001,
+            message: "Unknown or expired session.",
+            errorCode: "unknown_session"
+          });
           return;
         }
 
@@ -152,7 +198,12 @@ export async function createApp({ cwd = process.cwd(), closeSqlPools = closeSqlS
       }
 
       if (!isInitializeRequest(req.body)) {
-        createProtocolErrorResponse(res, 400, "Initialization request required when no session is provided.");
+        createProtocolErrorResponse(res, {
+          status: 400,
+          jsonRpcCode: -32600,
+          message: "Initialization request required when no session is provided.",
+          errorCode: "initialization_required"
+        });
         return;
       }
 
@@ -163,7 +214,12 @@ export async function createApp({ cwd = process.cwd(), closeSqlPools = closeSqlS
         error: error.message
       });
       if (!res.headersSent) {
-        createProtocolErrorResponse(res, 500, "Internal server error.");
+        createProtocolErrorResponse(res, {
+          status: 500,
+          jsonRpcCode: -32603,
+          message: "Internal server error.",
+          errorCode: "internal_error"
+        });
       }
     }
   });
@@ -172,13 +228,23 @@ export async function createApp({ cwd = process.cwd(), closeSqlPools = closeSqlS
     const sessionId = req.headers["mcp-session-id"];
 
     if (typeof sessionId !== "string") {
-      createProtocolErrorResponse(res, 400, "Session ID header is required.");
+      createProtocolErrorResponse(res, {
+        status: 400,
+        jsonRpcCode: -32600,
+        message: "Session ID header is required.",
+        errorCode: "session_id_required"
+      });
       return;
     }
 
     const session = await resolveSession(sessionId);
     if (!session) {
-      createProtocolErrorResponse(res, 404, "Unknown or expired session.");
+      createProtocolErrorResponse(res, {
+        status: 404,
+        jsonRpcCode: -32001,
+        message: "Unknown or expired session.",
+        errorCode: "unknown_session"
+      });
       return;
     }
 
@@ -189,7 +255,12 @@ export async function createApp({ cwd = process.cwd(), closeSqlPools = closeSqlS
         error: error.message
       });
       if (!res.headersSent) {
-        createProtocolErrorResponse(res, 500, "Internal server error.");
+        createProtocolErrorResponse(res, {
+          status: 500,
+          jsonRpcCode: -32603,
+          message: "Internal server error.",
+          errorCode: "internal_error"
+        });
       }
     }
   });
@@ -198,13 +269,23 @@ export async function createApp({ cwd = process.cwd(), closeSqlPools = closeSqlS
     const sessionId = req.headers["mcp-session-id"];
 
     if (typeof sessionId !== "string") {
-      createProtocolErrorResponse(res, 400, "Session ID header is required.");
+      createProtocolErrorResponse(res, {
+        status: 400,
+        jsonRpcCode: -32600,
+        message: "Session ID header is required.",
+        errorCode: "session_id_required"
+      });
       return;
     }
 
     const session = await resolveSession(sessionId);
     if (!session) {
-      createProtocolErrorResponse(res, 404, "Unknown or expired session.");
+      createProtocolErrorResponse(res, {
+        status: 404,
+        jsonRpcCode: -32001,
+        message: "Unknown or expired session.",
+        errorCode: "unknown_session"
+      });
       return;
     }
 
@@ -215,7 +296,12 @@ export async function createApp({ cwd = process.cwd(), closeSqlPools = closeSqlS
         error: error.message
       });
       if (!res.headersSent) {
-        createProtocolErrorResponse(res, 500, "Internal server error.");
+        createProtocolErrorResponse(res, {
+          status: 500,
+          jsonRpcCode: -32603,
+          message: "Internal server error.",
+          errorCode: "internal_error"
+        });
       }
     }
   });

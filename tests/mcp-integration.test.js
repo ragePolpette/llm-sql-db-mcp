@@ -5,6 +5,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { startServer } from "../src/server.js";
 
+function parseErrorEnvelope(toolResult) {
+  return JSON.parse(toolResult.content[1].text);
+}
+
 async function getFreePort() {
   return await new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -44,6 +48,17 @@ test("integration: health, tool surface, target tools, and db_read error path wo
     assert.equal(healthResponse.status, 200);
     assert.equal(healthPayload.target_count, 2);
 
+    const missingSessionResponse = await fetch(
+      `http://${runtime.config.host}:${runtime.config.port}${runtime.config.mcpPath}`
+    );
+    const missingSessionPayload = await missingSessionResponse.json();
+    assert.equal(missingSessionResponse.status, 400);
+    assert.equal(missingSessionPayload.error.data.error_code, "session_id_required");
+    assert.equal(
+      missingSessionPayload.error.data.request_id,
+      missingSessionResponse.headers.get("x-request-id")
+    );
+
     const transport = new StreamableHTTPClientTransport(
       new URL(`http://${runtime.config.host}:${runtime.config.port}${runtime.config.mcpPath}`)
     );
@@ -79,6 +94,7 @@ test("integration: health, tool surface, target tools, and db_read error path wo
       arguments: { target_id: "dev-main", sql: "SELECT 1 AS value" }
     });
     assert.equal(readResult.isError, true);
+    assert.equal(parseErrorEnvelope(readResult).error.code, "db_read_failed");
     assert.match(readResult.content[0].text, /DB_DEV_MAIN_CONNECTION_STRING/);
   } finally {
     await client.close().catch(() => {});

@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { TargetRegistry } from "../src/lib/target-registry.js";
 import { createHandlers } from "../src/lib/handlers.js";
 
+function parseErrorEnvelope(result) {
+  return JSON.parse(result.content[1].text);
+}
+
 function createTarget({
   target_id,
   display_name,
@@ -128,6 +132,7 @@ test("dbRead returns a clear error when the connection string env var is missing
   });
 
   assert.equal(result.isError, true);
+  assert.equal(parseErrorEnvelope(result).error.code, "db_read_failed");
   assert.match(result.content[0].text, /DB_DEV_MAIN_CONNECTION_STRING/);
   assert.match(result.content[0].text, /dev-main/);
 });
@@ -152,8 +157,35 @@ test("dbRead rejects unsafe sql before executing the driver", async () => {
   });
 
   assert.equal(result.isError, true);
+  assert.equal(parseErrorEnvelope(result).error.code, "invalid_sql");
   assert.equal(wasCalled, false);
   assert.match(result.content[0].text, /Only SELECT|Forbidden SQL keyword/i);
+});
+
+test("dbRead returns machine-readable error details for unknown targets", async () => {
+  const handlers = createHandlers({
+    targetRegistry: createTestRegistry(),
+    env: {},
+    executeSqlRead: async () => {
+      throw new Error("should not be called");
+    }
+  });
+
+  const result = await handlers.dbRead({
+    target_id: "missing-target",
+    sql: "SELECT 1"
+  });
+
+  assert.equal(result.isError, true);
+  assert.deepEqual(parseErrorEnvelope(result), {
+    error: {
+      code: "target_not_found",
+      message: "Unknown target_id: missing-target",
+      details: {
+        target_id: "missing-target"
+      }
+    }
+  });
 });
 
 test("dbRead normalizes the handler response and clamps max_rows", async () => {

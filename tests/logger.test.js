@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createLogger, __loggerTestUtils } from "../src/lib/logger.js";
+import { runWithRequestContext } from "../src/lib/request-context.js";
 
 function createWritableMemoryStream() {
   const chunks = [];
@@ -73,4 +74,29 @@ test("normalizeLogLevel rejects unsupported values", () => {
     () => __loggerTestUtils.normalizeLogLevel("trace"),
     /Unsupported LOG_LEVEL/
   );
+});
+
+test("createLogger includes request-scoped ids when present", () => {
+  const stdout = createWritableMemoryStream();
+  const logger = createLogger({
+    level: "info",
+    stdout
+  });
+
+  runWithRequestContext(
+    {
+      request_id: "req-123",
+      session_id: "session-456"
+    },
+    () => {
+      logger.info("server.started", {
+        service: "llm-sql-db-mcp"
+      });
+    }
+  );
+
+  assert.equal(stdout.chunks.length, 1);
+  const entry = JSON.parse(stdout.chunks[0]);
+  assert.equal(entry.request_id, "req-123");
+  assert.equal(entry.session_id, "session-456");
 });

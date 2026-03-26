@@ -18,18 +18,29 @@ function createJsonResult(payload) {
   };
 }
 
-function createErrorResult(message, details = {}) {
+function createErrorResult(message, { code = "tool_error", ...details } = {}) {
   const detailEntries = Object.entries(details);
   const detailSuffix =
     detailEntries.length === 0
       ? ""
       : `\n${JSON.stringify(details, null, 2)}`;
+  const errorEnvelope = {
+    error: {
+      code,
+      message,
+      details
+    }
+  };
 
   return {
     content: [
       {
         type: "text",
         text: `${message}${detailSuffix}`
+      },
+      {
+        type: "text",
+        text: JSON.stringify(errorEnvelope)
       }
     ],
     isError: true
@@ -162,12 +173,14 @@ export function createHandlers({
       const target = targetRegistry.get(targetId);
       if (!target) {
         return createErrorResult(`Unknown target_id: ${targetId}`, {
+          code: "target_not_found",
           target_id: targetId
         });
       }
 
       if (target.status !== "active") {
         return createErrorResult(`Target "${targetId}" is disabled.`, {
+          code: "target_disabled",
           target_id: targetId,
           status: target.status
         });
@@ -180,6 +193,7 @@ export function createHandlers({
       const target = targetRegistry.get(targetId);
       if (!target) {
         return createErrorResult(`Unknown target_id: ${targetId}`, {
+          code: "target_not_found",
           target_id: targetId
         });
       }
@@ -191,6 +205,7 @@ export function createHandlers({
       const target = targetRegistry.get(targetId);
       if (!target) {
         return createErrorResult(`Unknown target_id: ${targetId}`, {
+          code: "target_not_found",
           target_id: targetId
         });
       }
@@ -202,6 +217,7 @@ export function createHandlers({
 
       if (!policy.allowed) {
         return createErrorResult(policy.denial_reason, {
+          code: "policy_denied",
           target_id: targetId,
           tool_name: "db_read"
         });
@@ -212,6 +228,7 @@ export function createHandlers({
         normalizedSql = assertReadSafeSql(sql);
       } catch (error) {
         return createErrorResult(error.message, {
+          code: "invalid_sql",
           target_id: targetId,
           tool_name: "db_read"
         });
@@ -280,6 +297,7 @@ export function createHandlers({
         });
       } catch (error) {
         return createErrorResult(error.message, {
+          code: "db_read_failed",
           target_id: targetId,
           tool_name: "db_read"
         });
@@ -290,6 +308,7 @@ export function createHandlers({
       const target = targetRegistry.get(targetId);
       if (!target) {
         return createErrorResult(`Unknown target_id: ${targetId}`, {
+          code: "target_not_found",
           target_id: targetId
         });
       }
@@ -301,6 +320,7 @@ export function createHandlers({
 
       if (!policy.allowed) {
         return createErrorResult(policy.denial_reason, {
+          code: "policy_denied",
           target_id: targetId,
           tool_name: "db_write"
         });
@@ -311,6 +331,7 @@ export function createHandlers({
         normalizedSql = assertWriteSafeSql(sql);
       } catch (error) {
         return createErrorResult(error.message, {
+          code: "invalid_sql",
           target_id: targetId,
           tool_name: "db_write"
         });
@@ -355,6 +376,7 @@ export function createHandlers({
         });
       } catch (error) {
         return createErrorResult(error.message, {
+          code: "db_write_failed",
           target_id: targetId,
           tool_name: "db_write"
         });
