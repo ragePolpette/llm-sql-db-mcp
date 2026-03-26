@@ -73,6 +73,8 @@ Questo progetto assume un modello di sicurezza pragmatico:
 
 In pratica il boundary di sicurezza non e' "esporre il server a internet", ma "ridurre errori e abusi in un contesto locale controllato".
 
+Policy operativa e note di disclosure sono descritte in [SECURITY.md](./SECURITY.md).
+
 ## Limiti Noti
 
 Limiti intenzionali o attuali:
