@@ -45,30 +45,29 @@ function resolveEffectiveMaxRows(requestedMaxRows, targetMaxRows) {
 }
 function resolveDiagnosticTarget(targetRegistry, databaseTarget) {
   const matches = targetRegistry.list().filter(target => target.environment === databaseTarget);
-  const activeMatches = matches.filter(target => target.status === 'active');
+  const activeMatches = matches.filter(target => target.status === "active");
 
   if (activeMatches.length === 0) {
     return {
       target: null,
-      blockers: ['No active target found for database_target "' + databaseTarget + '".']
+      blockers: [`No active target found for database_target "${databaseTarget}".`]
     };
   }
 
-  const resolvedTarget = [...activeMatches].sort((left, right) =>
-    left.target_id.localeCompare(right.target_id)
-  )[0];
-
   if (activeMatches.length > 1) {
+    const matchedTargetIds = [...activeMatches]
+      .map(target => target.target_id)
+      .sort((left, right) => left.localeCompare(right));
     return {
-      target: resolvedTarget,
+      target: null,
       blockers: [
-        'Multiple active targets matched database_target "' + databaseTarget + '"; using target_id "' + resolvedTarget.target_id + '".'
+        `Multiple active targets matched database_target "${databaseTarget}": ${matchedTargetIds.join(", ")}. Use db_target_list and call db_read with an explicit target_id.`
       ]
     };
   }
 
   return {
-    target: resolvedTarget,
+    target: activeMatches[0],
     blockers: []
   };
 }
