@@ -24,7 +24,7 @@
     },
     {
       "target_id": "prod-main",
-      "display_name": "Prod Main",
+      "display_name": "Prod Main Readonly",
       "environment": "prod",
       "db_kind": "sqlserver",
       "status": "active",
@@ -40,8 +40,28 @@
       "allowed_tools": [
         "db_target_info",
         "db_policy_info",
-        "db_read",
-        "db_write"
+        "db_read"
+      ]
+    },
+    {
+      "target_id": "ops-archive",
+      "display_name": "Ops Archive Disabled",
+      "environment": "test",
+      "db_kind": "sqlserver",
+      "status": "disabled",
+      "connection_env_var": "DB_OPS_ARCHIVE_CONNECTION_STRING",
+      "read_enabled": true,
+      "write_enabled": false,
+      "anonymization_enabled": false,
+      "anonymization_mode": "off",
+      "llm_provider": "none",
+      "llm_model": "",
+      "max_rows": 50,
+      "max_result_bytes": 65536,
+      "allowed_tools": [
+        "db_target_info",
+        "db_policy_info",
+        "db_read"
       ]
     }
   ]

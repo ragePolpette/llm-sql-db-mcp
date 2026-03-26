@@ -116,6 +116,7 @@ npm install
 ```powershell
 $env:DB_DEV_MAIN_CONNECTION_STRING="Server=.;Database=DevDb;Trusted_Connection=True;Encrypt=False"
 $env:DB_PROD_MAIN_CONNECTION_STRING="Server=.;Database=ProdDb;Trusted_Connection=True;Encrypt=False"
+$env:DB_OPS_ARCHIVE_CONNECTION_STRING="Server=.;Database=OpsArchive;Trusted_Connection=True;Encrypt=False"
 ```
 
 4. Avvia il server:
@@ -183,6 +184,11 @@ Esempi tipici:
 - target dev read/write per workflow locale controllato
 - target prod read-only con anonimizzazione obbligatoria
 - target disabled mantenuto nel registry ma non interrogabile
+
+Il file [targets.example.json](./targets.example.json) mostra esplicitamente tutti e tre i profili:
+- `dev-main`: target dev read/write senza anonimizzazione
+- `prod-main`: target prod read-only con anonimizzazione attiva
+- `ops-archive`: target disabled utile come esempio di spegnimento operativo senza cancellare il binding
 
 Mode supportati:
 - `off`
