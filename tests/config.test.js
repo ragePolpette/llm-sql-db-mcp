@@ -37,3 +37,19 @@ test("loadRuntimeConfig rejects forbidden secrets in project .env", () => {
     /Forbidden secret keys/i
   );
 });
+
+test("loadRuntimeConfig parses LOG_LEVEL and rejects unsupported values", () => {
+  const cwd = createTempDir();
+  const config = loadRuntimeConfig({
+    cwd,
+    env: {
+      LOG_LEVEL: "debug"
+    }
+  });
+
+  assert.equal(config.logLevel, "debug");
+  assert.throws(
+    () => loadRuntimeConfig({ cwd, env: { LOG_LEVEL: "trace" } }),
+    /LOG_LEVEL must be one of/
+  );
+});
