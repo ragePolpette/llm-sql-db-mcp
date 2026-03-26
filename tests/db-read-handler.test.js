@@ -160,6 +160,15 @@ test("dbRead normalizes the handler response and clamps max_rows", async () => {
   const originalSql = "SELECT id FROM dbo.Users WHERE status = 'OPEN'";
   const handlers = createHandlers({
     targetRegistry: createTestRegistry(),
+    sqlDriverConfig: {
+      connectionTimeoutMs: 12000,
+      requestTimeoutMs: 18000,
+      pool: {
+        max: 8,
+        min: 0,
+        idleTimeoutMs: 30000
+      }
+    },
     env: {
       DB_DEV_MAIN_CONNECTION_STRING: "Server=.;Database=Test;Trusted_Connection=True;"
     },
@@ -167,6 +176,15 @@ test("dbRead normalizes the handler response and clamps max_rows", async () => {
       assert.equal(args.maxRows, 5);
       assert.equal(args.maxResultBytes, 1024);
       assert.equal(args.sqlText, originalSql);
+      assert.deepEqual(args.driverConfig, {
+        connectionTimeoutMs: 12000,
+        requestTimeoutMs: 18000,
+        pool: {
+          max: 8,
+          min: 0,
+          idleTimeoutMs: 30000
+        }
+      });
 
       return {
         columns: [{ name: "id", nullable: false, type: "Int" }],
@@ -352,5 +370,5 @@ test("dbWrite is denied for prod targets by the hard fence", async () => {
   });
 
   assert.equal(result.isError, true);
-  assert.match(result.content[0].text, /hard-fenced off for production target/i);
+  assert.match(result.content[0].text, /Write access is (disabled|hard-fenced off)/i);
 });

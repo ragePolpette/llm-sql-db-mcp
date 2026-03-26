@@ -53,3 +53,44 @@ test("loadRuntimeConfig parses LOG_LEVEL and rejects unsupported values", () => 
     /LOG_LEVEL must be one of/
   );
 });
+
+test("loadRuntimeConfig exposes SQL timeout and pool settings", () => {
+  const cwd = createTempDir();
+  const config = loadRuntimeConfig({
+    cwd,
+    env: {
+      DB_CONNECTION_TIMEOUT_MS: "12000",
+      DB_REQUEST_TIMEOUT_MS: "22000",
+      DB_POOL_MAX: "15",
+      DB_POOL_MIN: "2",
+      DB_POOL_IDLE_TIMEOUT_MS: "45000"
+    }
+  });
+
+  assert.deepEqual(config.sqlServer, {
+    connectionTimeoutMs: 12000,
+    requestTimeoutMs: 22000,
+    pool: {
+      max: 15,
+      min: 2,
+      idleTimeoutMs: 45000
+    }
+  });
+});
+
+test("loadRuntimeConfig rejects invalid SQL timeout and pool settings", () => {
+  const cwd = createTempDir();
+
+  assert.throws(
+    () => loadRuntimeConfig({ cwd, env: { DB_CONNECTION_TIMEOUT_MS: "0" } }),
+    /DB_CONNECTION_TIMEOUT_MS must be greater than zero/
+  );
+  assert.throws(
+    () => loadRuntimeConfig({ cwd, env: { DB_REQUEST_TIMEOUT_MS: "-1" } }),
+    /DB_REQUEST_TIMEOUT_MS must be greater than zero/
+  );
+  assert.throws(
+    () => loadRuntimeConfig({ cwd, env: { DB_POOL_MAX: "1", DB_POOL_MIN: "2" } }),
+    /DB_POOL_MAX must be greater than or equal to DB_POOL_MIN/
+  );
+});

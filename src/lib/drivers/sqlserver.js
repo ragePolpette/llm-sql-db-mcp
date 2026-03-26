@@ -78,13 +78,27 @@ function buildBoundedRows(rows, maxResultBytes) {
   };
 }
 
-async function getPool(connectionString) {
+export function buildSqlServerConnectionConfig(connectionString, driverConfig = {}) {
+  const pool = driverConfig.pool ?? {};
+  return {
+    connectionString,
+    connectionTimeout: driverConfig.connectionTimeoutMs,
+    requestTimeout: driverConfig.requestTimeoutMs,
+    pool: {
+      max: pool.max,
+      min: pool.min,
+      idleTimeoutMillis: pool.idleTimeoutMs
+    }
+  };
+}
+
+async function getPool(connectionString, driverConfig = {}) {
   const cachedPool = poolCache.get(connectionString);
   if (cachedPool) {
     return cachedPool;
   }
 
-  const pool = new sql.ConnectionPool(connectionString);
+  const pool = new sql.ConnectionPool(buildSqlServerConnectionConfig(connectionString, driverConfig));
   const connectedPool = await pool.connect();
   poolCache.set(connectionString, connectedPool);
   return connectedPool;
@@ -95,9 +109,10 @@ export async function executeSqlServerRead({
   sqlText,
   parameters = {},
   maxRows,
-  maxResultBytes
+  maxResultBytes,
+  driverConfig = {}
 }) {
-  const pool = await getPool(connectionString);
+  const pool = await getPool(connectionString, driverConfig);
   const request = pool.request();
 
   for (const [name, value] of Object.entries(parameters)) {
@@ -133,9 +148,10 @@ export async function executeSqlServerWrite({
   connectionString,
   sqlText,
   parameters = {},
-  maxResultBytes
+  maxResultBytes,
+  driverConfig = {}
 }) {
-  const pool = await getPool(connectionString);
+  const pool = await getPool(connectionString, driverConfig);
   const request = pool.request();
 
   for (const [name, value] of Object.entries(parameters)) {
@@ -176,6 +192,7 @@ export async function closeSqlServerPools() {
 }
 
 export const __sqlServerTestUtils = {
+  buildSqlServerConnectionConfig,
   getPoolCacheSize() {
     return poolCache.size;
   },

@@ -115,6 +115,7 @@ export function createHandlers({
   env = process.env,
   executeSqlRead,
   executeSqlWrite,
+  sqlDriverConfig = {},
   anonymizeQueryResult,
   providerConfig,
   fetchImpl = globalThis.fetch,
@@ -232,7 +233,8 @@ export function createHandlers({
           sqlText: normalizedSql,
           parameters,
           maxRows: effectiveMaxRows,
-          maxResultBytes: target.max_result_bytes
+          maxResultBytes: target.max_result_bytes,
+          driverConfig: sqlDriverConfig
         });
 
         const finalResult = policy.anonymization_required
@@ -328,7 +330,8 @@ export function createHandlers({
           connectionString,
           sqlText: normalizedSql,
           parameters,
-          maxResultBytes: target.max_result_bytes
+          maxResultBytes: target.max_result_bytes,
+          driverConfig: sqlDriverConfig
         });
 
         logDbEvent?.("query_out", {

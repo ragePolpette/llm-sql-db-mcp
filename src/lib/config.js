@@ -8,6 +8,11 @@ const DEFAULT_MCP_PATH = "/mcp";
 const DEFAULT_HEALTH_PATH = "/health";
 const DEFAULT_TARGETS_FILE = "targets.json";
 const DEFAULT_SWEEP_INTERVAL_MS = 60_000;
+const DEFAULT_DB_CONNECTION_TIMEOUT_MS = 15_000;
+const DEFAULT_DB_REQUEST_TIMEOUT_MS = 15_000;
+const DEFAULT_DB_POOL_MAX = 10;
+const DEFAULT_DB_POOL_MIN = 0;
+const DEFAULT_DB_POOL_IDLE_TIMEOUT_MS = 30_000;
 const FORBIDDEN_ENV_KEY_PATTERNS = [
   /CONNECTION_STRING$/i,
   /(API_KEY|ACCESS_TOKEN|AUTH_TOKEN|SECRET|PASSWORD)$/i
@@ -122,6 +127,48 @@ export function loadRuntimeConfig({ cwd = process.cwd(), env = process.env } = {
     throw new Error("ANON_TIMEOUT_MS must be greater than zero.");
   }
 
+  const dbConnectionTimeoutMs = parseInteger(
+    env.DB_CONNECTION_TIMEOUT_MS,
+    DEFAULT_DB_CONNECTION_TIMEOUT_MS,
+    "DB_CONNECTION_TIMEOUT_MS"
+  );
+  const dbRequestTimeoutMs = parseInteger(
+    env.DB_REQUEST_TIMEOUT_MS,
+    DEFAULT_DB_REQUEST_TIMEOUT_MS,
+    "DB_REQUEST_TIMEOUT_MS"
+  );
+  const dbPoolMax = parseInteger(env.DB_POOL_MAX, DEFAULT_DB_POOL_MAX, "DB_POOL_MAX");
+  const dbPoolMin = parseInteger(env.DB_POOL_MIN, DEFAULT_DB_POOL_MIN, "DB_POOL_MIN");
+  const dbPoolIdleTimeoutMs = parseInteger(
+    env.DB_POOL_IDLE_TIMEOUT_MS,
+    DEFAULT_DB_POOL_IDLE_TIMEOUT_MS,
+    "DB_POOL_IDLE_TIMEOUT_MS"
+  );
+
+  if (dbConnectionTimeoutMs <= 0) {
+    throw new Error("DB_CONNECTION_TIMEOUT_MS must be greater than zero.");
+  }
+
+  if (dbRequestTimeoutMs <= 0) {
+    throw new Error("DB_REQUEST_TIMEOUT_MS must be greater than zero.");
+  }
+
+  if (dbPoolMin < 0) {
+    throw new Error("DB_POOL_MIN must be zero or greater.");
+  }
+
+  if (dbPoolMax <= 0) {
+    throw new Error("DB_POOL_MAX must be greater than zero.");
+  }
+
+  if (dbPoolMax < dbPoolMin) {
+    throw new Error("DB_POOL_MAX must be greater than or equal to DB_POOL_MIN.");
+  }
+
+  if (dbPoolIdleTimeoutMs <= 0) {
+    throw new Error("DB_POOL_IDLE_TIMEOUT_MS must be greater than zero.");
+  }
+
   return {
     serverName: "llm-sql-db-mcp",
     serverVersion: "0.1.0",
@@ -135,6 +182,15 @@ export function loadRuntimeConfig({ cwd = process.cwd(), env = process.env } = {
     allowLoopbackOrigins,
     allowedOrigins,
     logLevel: parseEnum(env.LOG_LEVEL, ["error", "info", "debug"], "info", "LOG_LEVEL"),
+    sqlServer: {
+      connectionTimeoutMs: dbConnectionTimeoutMs,
+      requestTimeoutMs: dbRequestTimeoutMs,
+      pool: {
+        max: dbPoolMax,
+        min: dbPoolMin,
+        idleTimeoutMs: dbPoolIdleTimeoutMs
+      }
+    },
     providers: {
       lmstudioBaseUrl: env.LMSTUDIO_BASE_URL ?? "http://127.0.0.1:1234/v1",
       ollamaBaseUrl: env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434",

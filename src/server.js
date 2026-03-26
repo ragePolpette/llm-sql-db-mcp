@@ -109,6 +109,7 @@ export async function createApp({ cwd = process.cwd(), closeSqlPools = closeSqlS
       env: process.env,
       executeSqlRead: executeSqlServerRead,
       executeSqlWrite: executeSqlServerWrite,
+      sqlDriverConfig: config.sqlServer,
       anonymizeQueryResult,
       providerConfig: config.providers,
       logDbEvent: logger.dbEvent
