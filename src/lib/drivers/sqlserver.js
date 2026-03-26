@@ -174,3 +174,15 @@ export async function closeSqlServerPools() {
     pools.map(pool => pool.close())
   );
 }
+
+export const __sqlServerTestUtils = {
+  getPoolCacheSize() {
+    return poolCache.size;
+  },
+  setCachedPool(connectionString, pool) {
+    poolCache.set(connectionString, pool);
+  },
+  resetPoolCache() {
+    poolCache.clear();
+  }
+};
