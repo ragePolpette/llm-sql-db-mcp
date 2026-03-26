@@ -51,8 +51,8 @@ Obiettivo: eliminare i punti che oggi fanno sembrare il tool rischioso o incompl
   - niente dump completo del SQL in produzione locale "normale"
 - [x] Introdurre livelli di logging espliciti (`error`, `info`, `debug`) con redaction coerente.
 - [x] Chiudere esplicitamente i pool SQL Server nello shutdown del server.
-- [ ] Introdurre timeout DB espliciti per query e connessioni.
-- [ ] Introdurre configurazione minima del pool DB (`max`, `min`, `idleTimeoutMillis` o equivalente `mssql`).
+- [x] Introdurre timeout DB espliciti per query e connessioni.
+- [x] Introdurre configurazione minima del pool DB (`max`, `min`, `idleTimeoutMillis` o equivalente `mssql`).
 - [ ] Rendere `run_diagnostic_query` non ambiguo con registry dinamico.
   Opzioni accettabili:
   - richiedere `target_id` esplicito nel path diagnostico
@@ -142,7 +142,7 @@ Usare questa sezione durante il lavoro per collegare gli item alle PR.
 |---|---|---|---|---|
 | P0 logging redaction | feature/p0-redacted-logging |  | Ready for PR | logging redatto + log levels espliciti + check/test ok |
 | P0 DB shutdown + pool close | feature/p0-db-shutdown-pool-close |  | Ready for PR | runtime.stop chiude le pool SQL + test lifecycle + check/test ok |
-| P0 DB timeout + pool config |  |  | Todo |  |
+| P0 DB timeout + pool config | feature/p0-db-timeout-pool-config |  | Ready for PR | config runtime SQL esplicita + mapping driver + test + check/test ok |
 | P0 diagnostic target resolution |  |  | Todo |  |
 | P0 session TTL policy |  |  | Todo |  |
 | P1 README hardening |  |  | Todo |  |
