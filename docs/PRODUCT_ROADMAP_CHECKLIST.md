@@ -79,17 +79,17 @@ Obiettivo: far percepire il progetto come prodotto curato, non come harness inte
   - come gestire secret e target prod
 - [x] Aggiungere `CONTRIBUTING.md` con workflow branch -> push -> PR -> merge.
 - [x] Aggiungere una `LICENSE` adatta alla pubblicazione del portfolio.
-- [ ] Aggiungere una sezione "Operational Notes" con:
+- [x] Aggiungere una sezione "Operational Notes" con:
   - come avviare il tool
   - come fare smoke test
   - come ruotare i secret runtime
   - come disabilitare un target
-- [ ] Aggiungere esempi migliori di configurazione target:
+- [x] Aggiungere esempi migliori di configurazione target:
   - dev read/write
   - prod read-only + anonymization
   - target disabled
 - [ ] Ripulire o contestualizzare i documenti legacy/prompt-oriented dentro `docs/`.
-- [ ] Aggiungere una mini roadmap pubblica nel `README` che punti a questo file.
+- [x] Aggiungere una mini roadmap pubblica nel `README` che punti a questo file.
 
 ## P1.5 - Hardening Tecnico Ragionevole
 
@@ -147,6 +147,7 @@ Usare questa sezione durante il lavoro per collegare gli item alle PR.
 | P0 session TTL policy | feature/p0-session-ttl-policy | #10 | Merged | default TTL a 30 minuti, `0` resta override esplicito, test aggiunti + check/test ok |
 | P1 README hardening | feature/p1-readme-hardening | #11 | Merged | scope, architettura, data flow, limiti, note operative e security model chiariti |
 | P1 SECURITY.md | feature/p1-security-docs | #12 | Merged | threat model leggero, asset protetti, regole operative, secret e target prod chiariti |
-| P1 CONTRIBUTING.md + LICENSE | feature/p1-contributing-license |  | In progress | workflow branch->push->PR->merge, safety rules, test expectations e licenza MIT aggiunti |
+| P1 CONTRIBUTING.md + LICENSE | feature/p1-contributing-license | #13 | Merged | workflow branch->push->PR->merge, safety rules, test expectations e licenza MIT aggiunti |
+| P1 operational notes + target examples | feature/p1-target-examples |  | In progress | example registry con profili dev/prod/disabled e checklist P1 riallineata allo stato reale |
 | P1.5 request id + error model |  |  | Todo |  |
 | P1.5 guard/test hardening |  |  | Todo |  |
