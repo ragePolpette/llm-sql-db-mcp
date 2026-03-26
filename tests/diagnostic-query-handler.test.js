@@ -3,13 +3,85 @@ import assert from "node:assert/strict";
 import { TargetRegistry } from "../src/lib/target-registry.js";
 import { createHandlers } from "../src/lib/handlers.js";
 
-function createTestRegistry(includeProd = true) {
+function createTarget({
+  target_id,
+  display_name,
+  environment,
+  status,
+  connection_env_var,
+  read_enabled,
+  write_enabled,
+  anonymization_enabled,
+  anonymization_mode,
+  llm_provider,
+  llm_model,
+  max_rows,
+  max_result_bytes,
+  allowed_tools
+}) {
+  return {
+    target_id,
+    display_name,
+    environment,
+    db_kind: "sqlserver",
+    status,
+    connection_env_var,
+    connection_binding: {
+      source: "env",
+      env_var: connection_env_var,
+      vault_ref: null
+    },
+    read_enabled,
+    write_enabled,
+    anonymization_enabled,
+    anonymization_mode,
+    llm_provider,
+    llm_model,
+    max_rows,
+    max_result_bytes,
+    allowed_tools,
+    declared: {
+      read_enabled,
+      write_enabled,
+      anonymization_enabled,
+      anonymization_mode,
+      llm_provider,
+      llm_model,
+      max_rows,
+      max_result_bytes,
+      allowed_tools
+    },
+    effective: {
+      read_enabled,
+      write_enabled,
+      anonymization_enabled,
+      anonymization_mode,
+      llm_provider,
+      llm_model,
+      max_rows,
+      max_result_bytes,
+      allowed_tools
+    },
+    policy: {
+      read_enabled,
+      write_enabled,
+      anonymization_enabled,
+      anonymization_mode,
+      llm_provider,
+      llm_model,
+      max_rows,
+      max_result_bytes,
+      allowed_tools
+    }
+  };
+}
+
+function createTestRegistry(includeProd = true, extraTargets = []) {
   const targets = [
-    {
+    createTarget({
       target_id: "dev-main",
       display_name: "Dev Main",
       environment: "dev",
-      db_kind: "sqlserver",
       status: "active",
       connection_env_var: "DB_DEV_MAIN_CONNECTION_STRING",
       read_enabled: true,
@@ -21,15 +93,14 @@ function createTestRegistry(includeProd = true) {
       max_rows: 5,
       max_result_bytes: 1024,
       allowed_tools: ["db_target_info", "db_policy_info", "db_read", "db_write"]
-    }
+    })
   ];
 
   if (includeProd) {
-    targets.push({
+    targets.push(createTarget({
       target_id: "prod-main",
       display_name: "Prod Main",
       environment: "prod",
-      db_kind: "sqlserver",
       status: "active",
       connection_env_var: "DB_PROD_MAIN_CONNECTION_STRING",
       read_enabled: true,
@@ -41,10 +112,10 @@ function createTestRegistry(includeProd = true) {
       max_rows: 5,
       max_result_bytes: 1024,
       allowed_tools: ["db_target_info", "db_policy_info", "db_read", "db_write"]
-    });
+    }));
   }
 
-  return new TargetRegistry(targets);
+  return new TargetRegistry([...targets, ...extraTargets]);
 }
 
 test("runDiagnosticQuery maps database_target=dev to the dev target", async () => {
@@ -165,4 +236,50 @@ test("runDiagnosticQuery returns a clear blocker when the target is unavailable"
 
   assert.deepEqual(result.structuredContent.rows, []);
   assert.match(result.structuredContent.blockers[0], /No active target found for database_target "prod"/);
+});
+
+test("runDiagnosticQuery refuses ambiguous environment resolution when multiple active targets match", async () => {
+  let executeCalled = false;
+  const handlers = createHandlers({
+    targetRegistry: createTestRegistry(true, [
+      createTarget({
+        target_id: "prod-reporting",
+        display_name: "Prod Reporting",
+        environment: "prod",
+        status: "active",
+        connection_env_var: "DB_PROD_REPORTING_CONNECTION_STRING",
+        read_enabled: true,
+        write_enabled: false,
+        anonymization_enabled: true,
+        anonymization_mode: "hybrid",
+        llm_provider: "lmstudio",
+        llm_model: "gemma",
+        max_rows: 5,
+        max_result_bytes: 1024,
+        allowed_tools: ["db_target_info", "db_policy_info", "db_read", "db_write"]
+      })
+    ]),
+    env: {
+      DB_DEV_MAIN_CONNECTION_STRING: "Server=dev;Database=Test;",
+      DB_PROD_MAIN_CONNECTION_STRING: "Server=prod;Database=Prod;",
+      DB_PROD_REPORTING_CONNECTION_STRING: "Server=prod;Database=Reporting;"
+    },
+    executeSqlRead: async () => {
+      executeCalled = true;
+      throw new Error("should not be called");
+    }
+  });
+
+  const result = await handlers.runDiagnosticQuery({
+    database_target: "prod",
+    ticket_key: "TICKET-4",
+    phase: "triage",
+    query: "SELECT 1"
+  });
+
+  assert.equal(executeCalled, false);
+  assert.equal(result.structuredContent.used.target_id, null);
+  assert.deepEqual(result.structuredContent.rows, []);
+  assert.match(result.structuredContent.blockers[0], /Multiple active targets matched database_target "prod"/);
+  assert.match(result.structuredContent.blockers[0], /prod-main, prod-reporting/);
 });
