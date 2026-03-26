@@ -77,8 +77,8 @@ Obiettivo: far percepire il progetto come prodotto curato, non come harness inte
   - cosa e' protetto
   - cosa non va fatto
   - come gestire secret e target prod
-- [ ] Aggiungere `CONTRIBUTING.md` con workflow branch -> push -> PR -> merge.
-- [ ] Aggiungere una `LICENSE` adatta alla pubblicazione del portfolio.
+- [x] Aggiungere `CONTRIBUTING.md` con workflow branch -> push -> PR -> merge.
+- [x] Aggiungere una `LICENSE` adatta alla pubblicazione del portfolio.
 - [ ] Aggiungere una sezione "Operational Notes" con:
   - come avviare il tool
   - come fare smoke test
@@ -146,7 +146,7 @@ Usare questa sezione durante il lavoro per collegare gli item alle PR.
 | P0 diagnostic target resolution | feature/p0-diagnostic-target-resolution | #9 | Merged | il tool diagnostico fallisce su target multipli attivi invece di sceglierne uno + check/test ok |
 | P0 session TTL policy | feature/p0-session-ttl-policy | #10 | Merged | default TTL a 30 minuti, `0` resta override esplicito, test aggiunti + check/test ok |
 | P1 README hardening | feature/p1-readme-hardening | #11 | Merged | scope, architettura, data flow, limiti, note operative e security model chiariti |
-| P1 SECURITY.md | feature/p1-security-docs |  | In progress | threat model leggero, asset protetti, regole operative, secret e target prod chiariti |
-| P1 CONTRIBUTING.md + LICENSE |  |  | Todo |  |
+| P1 SECURITY.md | feature/p1-security-docs | #12 | Merged | threat model leggero, asset protetti, regole operative, secret e target prod chiariti |
+| P1 CONTRIBUTING.md + LICENSE | feature/p1-contributing-license |  | In progress | workflow branch->push->PR->merge, safety rules, test expectations e licenza MIT aggiunti |
 | P1.5 request id + error model |  |  | Todo |  |
 | P1.5 guard/test hardening |  |  | Todo |  |
