@@ -10,6 +10,7 @@ import { anonymizeQueryResult } from "./lib/anonymizer.js";
 import { isOriginAllowed, loadRuntimeConfig } from "./lib/config.js";
 import { executeSqlServerRead, executeSqlServerWrite } from "./lib/drivers/sqlserver.js";
 import { createHandlers } from "./lib/handlers.js";
+import { createLogger } from "./lib/logger.js";
 import { registerFixedTools } from "./lib/tools.js";
 import { SessionStore } from "./lib/session-store.js";
 import { loadTargetRegistry } from "./lib/target-registry.js";
@@ -23,19 +24,6 @@ function createProtocolErrorResponse(res, status, message) {
     },
     id: null
   });
-}
-
-function safeJson(value) {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return JSON.stringify({ error: "serialization_failed" });
-  }
-}
-
-function logDbEvent(event, payload) {
-  const timestamp = new Date().toISOString();
-  process.stdout.write(`[DB_SQL_MCP] ${timestamp} ${event} ${safeJson(payload)}\n`);
 }
 
 function buildMcpServer(config, dependencies) {
@@ -52,12 +40,21 @@ async function safeCloseTransport(transport, sessionId) {
   try {
     await transport.close();
   } catch (error) {
-    console.error(`Failed to close session ${sessionId}:`, error);
+    // Fallback logger is used only when a scoped runtime logger is not available yet.
+    fallbackLogger.error("session.close_failed", {
+      session_id: sessionId,
+      error: error.message
+    });
   }
 }
 
+const fallbackLogger = createLogger();
+
 export async function createApp({ cwd = process.cwd() } = {}) {
   const config = loadRuntimeConfig({ cwd });
+  const logger = createLogger({
+    level: config.logLevel
+  });
   const targetRegistry = await loadTargetRegistry(config.targetsFile, { env: process.env });
   const app = createMcpExpressApp();
   const sessionStore = new SessionStore({
@@ -114,7 +111,7 @@ export async function createApp({ cwd = process.cwd() } = {}) {
       executeSqlWrite: executeSqlServerWrite,
       anonymizeQueryResult,
       providerConfig: config.providers,
-      logDbEvent
+      logDbEvent: logger.dbEvent
     });
     let transport;
 
@@ -161,7 +158,9 @@ export async function createApp({ cwd = process.cwd() } = {}) {
       const transport = await createTransportForInitialization();
       await transport.handleRequest(req, res, req.body);
     } catch (error) {
-      console.error("MCP POST handling failed:", error);
+      logger.error("http.mcp_post_failed", {
+        error: error.message
+      });
       if (!res.headersSent) {
         createProtocolErrorResponse(res, 500, "Internal server error.");
       }
@@ -185,7 +184,9 @@ export async function createApp({ cwd = process.cwd() } = {}) {
     try {
       await session.transport.handleRequest(req, res);
     } catch (error) {
-      console.error("MCP GET handling failed:", error);
+      logger.error("http.mcp_get_failed", {
+        error: error.message
+      });
       if (!res.headersSent) {
         createProtocolErrorResponse(res, 500, "Internal server error.");
       }
@@ -209,7 +210,9 @@ export async function createApp({ cwd = process.cwd() } = {}) {
     try {
       await session.transport.handleRequest(req, res);
     } catch (error) {
-      console.error("MCP DELETE handling failed:", error);
+      logger.error("http.mcp_delete_failed", {
+        error: error.message
+      });
       if (!res.headersSent) {
         createProtocolErrorResponse(res, 500, "Internal server error.");
       }
@@ -219,12 +222,20 @@ export async function createApp({ cwd = process.cwd() } = {}) {
   return {
     app,
     config,
+    logger,
     targetRegistry,
     async stop() {
       clearInterval(sweepTimer);
       const activeSessions = sessionStore.drain();
       for (const session of activeSessions) {
-        await safeCloseTransport(session.value.transport, session.sessionId);
+        try {
+          await session.value.transport.close();
+        } catch (error) {
+          logger.error("session.close_failed", {
+            session_id: session.sessionId,
+            error: error.message
+          });
+        }
       }
     }
   };
@@ -232,7 +243,7 @@ export async function createApp({ cwd = process.cwd() } = {}) {
 
 export async function startServer({ cwd = process.cwd() } = {}) {
   const runtimeApp = await createApp({ cwd });
-  const { app, config, targetRegistry } = runtimeApp;
+  const { app, config, logger, targetRegistry } = runtimeApp;
   const server = http.createServer(app);
 
   await new Promise((resolve, reject) => {
@@ -240,13 +251,18 @@ export async function startServer({ cwd = process.cwd() } = {}) {
     server.listen(config.port, config.host, resolve);
   });
 
-  console.log(
-    `${config.serverName} listening on http://${config.host}:${config.port}${config.mcpPath} with ${targetRegistry.size} configured targets.`
-  );
+  logger.info("server.started", {
+    service: config.serverName,
+    host: config.host,
+    port: config.port,
+    mcp_path: config.mcpPath,
+    target_count: targetRegistry.size
+  });
 
   return {
     server,
     config,
+    logger,
     targetRegistry,
     async close() {
       await runtimeApp.stop();
@@ -269,7 +285,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const runtime = await startServer();
 
     const shutdown = async signal => {
-      console.log(`Received ${signal}, shutting down.`);
+      runtime.logger.info("server.shutdown_requested", {
+        signal
+      });
       await runtime.close();
       process.exit(0);
     };
@@ -277,7 +295,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.on("SIGINT", shutdown);
     process.on("SIGTERM", shutdown);
   } catch (error) {
-    console.error("Unable to start llm-sql-db-mcp:", error);
+    fallbackLogger.error("server.start_failed", {
+      error: error.message
+    });
     process.exit(1);
   }
 }

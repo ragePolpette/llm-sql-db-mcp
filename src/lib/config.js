@@ -134,7 +134,7 @@ export function loadRuntimeConfig({ cwd = process.cwd(), env = process.env } = {
     sessionSweepIntervalMs,
     allowLoopbackOrigins,
     allowedOrigins,
-    logLevel: env.LOG_LEVEL ?? "info",
+    logLevel: parseEnum(env.LOG_LEVEL, ["error", "info", "debug"], "info", "LOG_LEVEL"),
     providers: {
       lmstudioBaseUrl: env.LMSTUDIO_BASE_URL ?? "http://127.0.0.1:1234/v1",
       ollamaBaseUrl: env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434",
