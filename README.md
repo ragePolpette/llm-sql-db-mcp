@@ -91,6 +91,7 @@ Limiti intenzionali o attuali:
 - Rotazione secret runtime: aggiornare solo le env var di connessione o il binding esterno del target, mai committare secret nel repo
 - Disabilitazione target: impostare `status=disabled` nel target registry e riavviare il processo che carica il file
 - Roadmap operativa: vedi [docs/PRODUCT_ROADMAP_CHECKLIST.md](./docs/PRODUCT_ROADMAP_CHECKLIST.md)
+- Docs index: vedi [docs/README.md](./docs/README.md)
 - Contributi: vedi [CONTRIBUTING.md](./CONTRIBUTING.md)
 - Security posture: vedi [SECURITY.md](./SECURITY.md)
 - Licenza: vedi [LICENSE](./LICENSE)
