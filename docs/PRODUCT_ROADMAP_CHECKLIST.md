@@ -96,7 +96,7 @@ Obiettivo: far percepire il progetto come prodotto curato, non come harness inte
 Obiettivo: aumentare la credibilita' tecnica senza sovraingegnerizzare.
 
 - [x] Introdurre `request_id` o `correlation_id` nei log runtime.
-- [ ] Distinguere meglio health, readiness e stato dipendenze.
+- [x] Distinguere meglio health, readiness e stato dipendenze.
   Minimo accettabile:
   - `/health` base
   - readiness check che segnali config/registry validi
@@ -150,5 +150,6 @@ Usare questa sezione durante il lavoro per collegare gli item alle PR.
 | P1 CONTRIBUTING.md + LICENSE | feature/p1-contributing-license | #13 | Merged | workflow branch->push->PR->merge, safety rules, test expectations e licenza MIT aggiunti |
 | P1 operational notes + target examples | feature/p1-target-examples | #14 | Merged | example registry con profili dev/prod/disabled e checklist P1 riallineata allo stato reale |
 | P1 docs cleanup | feature/p1-docs-cleanup | #15 | Merged | indice `docs/` pubblico e criterio di inclusione per evitare handoff/prompt interni nel repo |
-| P1.5 request id + error model | feature/p1_5-request-id-error-model |  | In progress | `request_id` request-scoped nei log, errori HTTP MCP con `error_code`, tool errors con envelope JSON parseabile |
+| P1.5 request id + error model | feature/p1_5-request-id-error-model | #16 | Merged | `request_id` request-scoped nei log, errori HTTP MCP con `error_code`, tool errors con envelope JSON parseabile |
+| P1.5 health + readiness | feature/p1_5-health-readiness |  | In progress | `/health` resta liveness, `/ready` segnala registry caricato e target attivi con binding runtime minimi |
 | P1.5 guard/test hardening |  |  | Todo |  |

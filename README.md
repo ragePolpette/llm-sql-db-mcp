@@ -81,7 +81,7 @@ Limiti intenzionali o attuali:
 - solo SQL Server
 - nessuna UI incorporata in questo repo
 - le protezioni SQL restano guard rail applicativi, non sostituiscono permessi DB minimi lato credenziali
-- `/health` e' ancora una liveness semplice, non una readiness completa
+- `/ready` esiste per segnalare config e registry minimi, ma non sostituisce dependency checks profondi
 - l'autenticazione forte non e' implementata perche' il target operativo non e' pubblico
 
 ## Operational Notes
@@ -128,6 +128,7 @@ npm start
 
 Health:
 - `GET /health`
+- `GET /ready`
 
 Endpoint MCP:
 - `POST /mcp`
@@ -141,6 +142,7 @@ Variabili principali:
 - `PORT`: default `3000`
 - `MCP_PATH`: default `/mcp`
 - `HEALTH_PATH`: default `/health`
+- `READINESS_PATH`: default `/ready`
 - `TARGETS_FILE`: default `targets.json`
 - `SESSION_TTL_MS`: default `1800000` (30 minuti). `0` significa no expiry ed e' consigliato solo per debugging locale controllato
 - `SESSION_SWEEP_INTERVAL_MS`: sweep interval delle sessioni scadute
