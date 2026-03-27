@@ -12,6 +12,7 @@ Obiettivo:
 - [AUTH_FUTURE_INTEGRATION.md](./AUTH_FUTURE_INTEGRATION.md): punto di integrazione per auth opzionale futura senza cambiare query engine o surface MCP
 - [VERSIONING_POLICY.md](./VERSIONING_POLICY.md): regole semplici per versionare release pubblica, contract MCP e schema del target registry
 - [../CHANGELOG.md](../CHANGELOG.md): changelog minimale del prodotto con sezione `Unreleased` e baseline `0.1.0`
+- [RUNTIME_INTEGRATION_NOTES.md](./RUNTIME_INTEGRATION_NOTES.md): decisione esplicita sul non introdurre un `Dockerfile` ora e boundary futuro per control plane esterno
 
 ## Criterio Di Inclusione
 
