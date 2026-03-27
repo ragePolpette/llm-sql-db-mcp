@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import dotenv from "dotenv";
+import packageManifest from "../../package.json" with { type: "json" };
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3000;
@@ -174,7 +175,7 @@ export function loadRuntimeConfig({ cwd = process.cwd(), env = process.env } = {
 
   return {
     serverName: "llm-sql-db-mcp",
-    serverVersion: "0.1.0",
+    serverVersion: packageManifest.version,
     host,
     port,
     mcpPath,
