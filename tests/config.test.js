@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { loadRuntimeConfig } from "../src/lib/config.js";
+import packageManifest from "../package.json" with { type: "json" };
 
 function createTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "llm-sql-db-mcp-config-"));
@@ -18,6 +19,7 @@ test("loadRuntimeConfig returns defaults when no .env is present", () => {
 
   assert.equal(config.host, "127.0.0.1");
   assert.equal(config.port, 3000);
+  assert.equal(config.serverVersion, packageManifest.version);
   assert.equal(config.readinessPath, "/ready");
   assert.equal(path.basename(config.targetsFile), "targets.json");
   assert.equal(config.sessionTtlMs, 1_800_000);
