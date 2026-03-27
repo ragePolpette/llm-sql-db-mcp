@@ -68,9 +68,14 @@ Aggiornare la documentazione quando cambia uno di questi aspetti:
 
 I file principali da tenere coerenti sono:
 - [AGENTS.md](./AGENTS.md)
+- [CLAUDE.md](./CLAUDE.md)
 - [README.md](./README.md)
 - [SECURITY.md](./SECURITY.md)
 - [docs/PRODUCT_ROADMAP_CHECKLIST.md](./docs/PRODUCT_ROADMAP_CHECKLIST.md)
+
+Nota:
+- [AGENTS.md](./AGENTS.md) resta la source of truth per le istruzioni agent-side
+- [CLAUDE.md](./CLAUDE.md) e' solo un puntatore compatibile verso lo stesso contenuto operativo
 
 ## Pull Request Notes
 

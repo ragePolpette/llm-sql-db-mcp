@@ -27,3 +27,8 @@ C:\Users\Gianmarco\Urgewalt\SECURITY_EXCEPTIONS.md
 ```
 
 - Se non tocchi manifest o lockfile dipendenze, questo check non e' obbligatorio.
+
+## Chiusura task
+
+- Se hai toccato manifest o lockfile dipendenze, nel riepilogo finale devi riportare esplicitamente quale comando di dependency-policy hai eseguito e se e' passato o fallito.
+- Non dichiarare il task concluso omettendo un risultato dependency-policy fallito.
