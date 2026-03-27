@@ -96,6 +96,7 @@ Limiti intenzionali o attuali:
 - Docs index: vedi [docs/README.md](./docs/README.md)
 - Policy di versioning: vedi [docs/VERSIONING_POLICY.md](./docs/VERSIONING_POLICY.md)
 - Changelog: vedi [CHANGELOG.md](./CHANGELOG.md)
+- Note runtime/integration: vedi [docs/RUNTIME_INTEGRATION_NOTES.md](./docs/RUNTIME_INTEGRATION_NOTES.md)
 - Contributi: vedi [CONTRIBUTING.md](./CONTRIBUTING.md)
 - Security posture: vedi [SECURITY.md](./SECURITY.md)
 - Licenza: vedi [LICENSE](./LICENSE)
