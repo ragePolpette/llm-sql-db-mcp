@@ -186,6 +186,7 @@ export function loadRuntimeConfig({ cwd = process.cwd(), env = process.env } = {
     allowLoopbackOrigins,
     allowedOrigins,
     logLevel: parseEnum(env.LOG_LEVEL, ["error", "info", "debug"], "info", "LOG_LEVEL"),
+    logFormat: parseEnum(env.LOG_FORMAT, ["json", "plain"], "json", "LOG_FORMAT"),
     sqlServer: {
       connectionTimeoutMs: dbConnectionTimeoutMs,
       requestTimeoutMs: dbRequestTimeoutMs,

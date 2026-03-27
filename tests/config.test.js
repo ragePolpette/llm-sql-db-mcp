@@ -39,19 +39,25 @@ test("loadRuntimeConfig rejects forbidden secrets in project .env", () => {
   );
 });
 
-test("loadRuntimeConfig parses LOG_LEVEL and rejects unsupported values", () => {
+test("loadRuntimeConfig parses LOG_LEVEL/LOG_FORMAT and rejects unsupported values", () => {
   const cwd = createTempDir();
   const config = loadRuntimeConfig({
     cwd,
     env: {
-      LOG_LEVEL: "debug"
+      LOG_LEVEL: "debug",
+      LOG_FORMAT: "plain"
     }
   });
 
   assert.equal(config.logLevel, "debug");
+  assert.equal(config.logFormat, "plain");
   assert.throws(
     () => loadRuntimeConfig({ cwd, env: { LOG_LEVEL: "trace" } }),
     /LOG_LEVEL must be one of/
+  );
+  assert.throws(
+    () => loadRuntimeConfig({ cwd, env: { LOG_FORMAT: "xml" } }),
+    /LOG_FORMAT must be one of/
   );
 });
 

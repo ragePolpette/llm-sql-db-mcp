@@ -76,6 +76,33 @@ test("normalizeLogLevel rejects unsupported values", () => {
   );
 });
 
+test("normalizeLogFormat rejects unsupported values", () => {
+  assert.throws(
+    () => __loggerTestUtils.normalizeLogFormat("xml"),
+    /Unsupported LOG_FORMAT/
+  );
+});
+
+test("createLogger can emit plain text lines for local debugging", () => {
+  const stdout = createWritableMemoryStream();
+  const logger = createLogger({
+    level: "info",
+    format: "plain",
+    stdout
+  });
+
+  logger.info("server.started", {
+    service: "llm-sql-db-mcp",
+    port: 3000
+  });
+
+  assert.equal(stdout.chunks.length, 1);
+  const line = stdout.chunks[0];
+  assert.match(line, /INFO server\.started/);
+  assert.match(line, /service=llm-sql-db-mcp/);
+  assert.match(line, /port=3000/);
+});
+
 test("createLogger includes request-scoped ids when present", () => {
   const stdout = createWritableMemoryStream();
   const logger = createLogger({
