@@ -159,3 +159,4 @@ Usare questa sezione durante il lavoro per collegare gli item alle PR.
 | P2 auth integration design | feature/p2-auth-integration | #23 | Merged | boundary auth futuro documentato al bordo HTTP senza cambiare query engine o surface MCP |
 | P2 versioning policy | feature/p2-versioning-policy | #24 | Merged | policy pubblica per release, contract MCP e registry + allineamento `package.json -> serverVersion` |
 | P2 changelog baseline | feature/p2-changelog-policy | #25 | Merged | `CHANGELOG.md` reale con sezione `Unreleased` e baseline `0.1.0` |
+| P2 runtime integration notes | feature/p2-runtime-integration-notes | #26 | Merged | decisione esplicita sul non introdurre `Dockerfile` ora e boundary futuro per control plane esterno |
