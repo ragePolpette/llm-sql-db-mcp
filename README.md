@@ -94,6 +94,7 @@ Limiti intenzionali o attuali:
 - Disabilitazione target: impostare `status=disabled` nel target registry e riavviare il processo che carica il file
 - Roadmap operativa: vedi [docs/PRODUCT_ROADMAP_CHECKLIST.md](./docs/PRODUCT_ROADMAP_CHECKLIST.md)
 - Docs index: vedi [docs/README.md](./docs/README.md)
+- Policy di versioning: vedi [docs/VERSIONING_POLICY.md](./docs/VERSIONING_POLICY.md)
 - Contributi: vedi [CONTRIBUTING.md](./CONTRIBUTING.md)
 - Security posture: vedi [SECURITY.md](./SECURITY.md)
 - Licenza: vedi [LICENSE](./LICENSE)
