@@ -9,6 +9,7 @@ Obiettivo:
 ## Documenti Correnti
 
 - [PRODUCT_ROADMAP_CHECKLIST.md](./PRODUCT_ROADMAP_CHECKLIST.md): roadmap pragmatica del repo, checklist di hardening e tracking degli step completati
+- [AUTH_FUTURE_INTEGRATION.md](./AUTH_FUTURE_INTEGRATION.md): punto di integrazione per auth opzionale futura senza cambiare query engine o surface MCP
 
 ## Criterio Di Inclusione
 
