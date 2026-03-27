@@ -152,7 +152,7 @@ Variabili principali:
 - `OLLAMA_BASE_URL`: default `http://127.0.0.1:11434`
 - `ANON_FIELD_IDENTIFICATION`: `hybrid`, `heuristic`, `llm`
 - `ANON_HASH_SALT`: secret stabile usato per il masking deterministico
-- `ANON_FAIL_OPEN`: se `true`, in `llm-strict` non blocca la query quando l'identificazione LLM fallisce
+- `ANON_FAIL_OPEN`: se `true`, puo' aprire solo su target non-`prod`; per `environment=prod` `llm-strict` resta fail-closed
 - `ANON_TIMEOUT_MS`: timeout delle chiamate provider per identificazione campi
 
 Override runtime per target:

@@ -32,6 +32,15 @@ function clampRowsToByteLimit(rows, maxResultBytes) {
   return acceptedRows;
 }
 
+function resolveFailOpen(target, providerConfig) {
+  if (!providerConfig?.failOpen) {
+    return false;
+  }
+
+  const environment = String(target?.environment || "").trim().toLowerCase();
+  return environment !== "prod";
+}
+
 function buildAnonymizerConfig(target, providerConfig) {
   const provider = String(target.llm_provider || "none").toLowerCase();
   const baseUrl = provider === "lmstudio"
@@ -45,7 +54,7 @@ function buildAnonymizerConfig(target, providerConfig) {
     mode: normalizeMode(target.anonymization_mode),
     fieldIdentification: providerConfig.fieldIdentification,
     hashSalt: providerConfig.hashSalt,
-    failOpen: providerConfig.failOpen,
+    failOpen: resolveFailOpen(target, providerConfig),
     timeoutMs: providerConfig.timeoutMs,
     model: target.llm_model,
     baseUrl
@@ -91,4 +100,9 @@ export {
   extractJsonFromText,
   parseProviderJson,
   __anonymizationCoreTestUtils
+};
+
+export const __anonymizerTestUtils = {
+  normalizeMode,
+  resolveFailOpen
 };

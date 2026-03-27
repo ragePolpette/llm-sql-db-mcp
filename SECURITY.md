@@ -93,7 +93,7 @@ Uso sconsigliato o fuori scope:
 - dare accesso indiscriminato a client o agenti non affidabili
 - usare credenziali sysadmin o equivalenti
 - considerare i guard rail applicativi come sostituti dei permessi SQL
-- usare `ANON_FAIL_OPEN=true` su target sensibili senza averne capito l'impatto
+- usare `ANON_FAIL_OPEN=true` come scorciatoia per target `prod`: su `environment=prod` il progetto deve restare fail-closed
 
 ## Vulnerability Reporting
 
