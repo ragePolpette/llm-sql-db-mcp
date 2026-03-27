@@ -31,8 +31,14 @@ function stripStringLiterals(sql) {
   return sql.replace(/'(?:''|[^'])*'/g, "''");
 }
 
+function stripQuotedIdentifiers(sql) {
+  return sql
+    .replace(/\[(?:[^\]]|\]\])+\]/g, "[]")
+    .replace(/"(?:[^"]|"")*"/g, "\"\"");
+}
+
 function normalizeSql(sql) {
-  return stripStringLiterals(stripComments(sql))
+  return stripQuotedIdentifiers(stripStringLiterals(stripComments(sql)))
     .replace(/\s+/g, " ")
     .trim();
 }

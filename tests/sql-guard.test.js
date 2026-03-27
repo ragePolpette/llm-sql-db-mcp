@@ -39,6 +39,24 @@ test("assertReadSafeSql preserves string literals for execution", () => {
   assert.equal(assertReadSafeSql(sql), sql);
 });
 
+test("sql guard allows forbidden keywords inside string literals and comments", () => {
+  const result = inspectSqlSafety(`
+    SELECT 'DROP TABLE dbo.Users' AS command_text
+    -- EXEC dbo.DoThing
+    FROM dbo.Users
+  `);
+
+  assert.equal(result.allowed, true);
+});
+
+test("sql guard allows bracketed or quoted identifiers named like forbidden keywords", () => {
+  const bracketed = inspectSqlSafety('SELECT [EXEC], [INTO] FROM dbo.Users');
+  assert.equal(bracketed.allowed, true);
+
+  const quoted = inspectSqlSafety('SELECT "UPDATE", "DELETE" FROM dbo.Users');
+  assert.equal(quoted.allowed, true);
+});
+
 test("sql guard rejects write keywords", () => {
   const result = inspectSqlSafety("UPDATE dbo.Users SET name = 'x'");
   assert.equal(result.allowed, false);
@@ -64,6 +82,14 @@ test("write guard allows update statements", () => {
   assert.equal(assertWriteSafeSql(sql), sql);
 });
 
+test("write guard allows quoted identifiers and string literals with forbidden keywords", () => {
+  const bracketed = inspectWriteSafety("UPDATE dbo.Users SET [EXEC] = 'DROP TABLE' WHERE id = 1");
+  assert.equal(bracketed.allowed, true);
+
+  const quoted = inspectWriteSafety('UPDATE dbo.Users SET "ALTER" = \'CREATE TABLE\' WHERE id = 1');
+  assert.equal(quoted.allowed, true);
+});
+
 test("write guard rejects ddl and exec", () => {
   const ddl = inspectWriteSafety("DROP TABLE dbo.Users");
   assert.equal(ddl.allowed, false);
@@ -82,4 +108,15 @@ test("write guard rejects multiple statements and select into", () => {
   const selectInto = inspectWriteSafety("WITH x AS (SELECT 1 AS id) SELECT * INTO #tmp FROM x");
   assert.equal(selectInto.allowed, false);
   assert.match(selectInto.reason, /SELECT INTO|Write CTEs must resolve/i);
+});
+
+test("sql guard still rejects hidden second statements after comments", () => {
+  const result = inspectSqlSafety(`
+    SELECT 1;
+    -- harmless comment
+    DELETE FROM dbo.Users
+  `);
+
+  assert.equal(result.allowed, false);
+  assert.match(result.reason, /Multiple SQL statements/i);
 });
