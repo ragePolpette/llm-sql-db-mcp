@@ -42,6 +42,17 @@ Rischi non coperti completamente:
 - esposizione del server su internet senza autenticazione o proxy adeguato
 - bypass completi del motore SQL tramite capability esterne al processo
 
+## Future Authentication Boundary
+
+Il runtime attuale non implementa auth forte perche' il target operativo resta locale o team-limitato.
+
+La direzione prevista, se il repo dovesse salire di livello, e' aggiungere auth al bordo HTTP:
+- prima della risoluzione sessione MCP
+- prima dell'esecuzione dei tool
+- senza riscrivere query engine, registry o surface MCP
+
+Il design di riferimento e' documentato in [docs/AUTH_FUTURE_INTEGRATION.md](./docs/AUTH_FUTURE_INTEGRATION.md).
+
 ## Protected Assets
 
 Asset principali da proteggere:

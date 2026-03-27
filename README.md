@@ -74,6 +74,7 @@ Questo progetto assume un modello di sicurezza pragmatico:
 In pratica il boundary di sicurezza non e' "esporre il server a internet", ma "ridurre errori e abusi in un contesto locale controllato".
 
 Policy operativa e note di disclosure sono descritte in [SECURITY.md](./SECURITY.md).
+La direzione futura per un boundary di autenticazione opzionale e' documentata in [docs/AUTH_FUTURE_INTEGRATION.md](./docs/AUTH_FUTURE_INTEGRATION.md).
 
 ## Limiti Noti
 
@@ -83,6 +84,7 @@ Limiti intenzionali o attuali:
 - le protezioni SQL restano guard rail applicativi, non sostituiscono permessi DB minimi lato credenziali
 - `/ready` esiste per segnalare config e registry minimi, ma non sostituisce dependency checks profondi
 - l'autenticazione forte non e' implementata perche' il target operativo non e' pubblico
+- esiste un punto di integrazione documentato per auth futura, ma oggi non e' parte del runtime attivo
 
 ## Operational Notes
 
