@@ -103,7 +103,7 @@ Obiettivo: aumentare la credibilita' tecnica senza sovraingegnerizzare.
 - [x] Rendere gli errori piu' consistenti e machine-readable.
 - [x] Rendere esplicita la strategia per `ANON_FAIL_OPEN` e limitarla ai casi veramente tollerabili.
 - [x] Aggiungere test adversarial su `sql-guard` per query borderline e bypass lessicali.
-- [ ] Aggiungere test di integrazione sul nuovo registry dinamico con target multipli nello stesso environment.
+- [x] Aggiungere test di integrazione sul nuovo registry dinamico con target multipli nello stesso environment.
 
 ## P2 - Direzione Verso Enterprise, Senza Overbuild
 
@@ -153,4 +153,5 @@ Usare questa sezione durante il lavoro per collegare gli item alle PR.
 | P1.5 request id + error model | feature/p1_5-request-id-error-model | #16 | Merged | `request_id` request-scoped nei log, errori HTTP MCP con `error_code`, tool errors con envelope JSON parseabile |
 | P1.5 health + readiness | feature/p1_5-health-readiness | #17 | Merged | `/health` resta liveness, `/ready` segnala registry caricato e target attivi con binding runtime minimi |
 | P1.5 ANON_FAIL_OPEN policy | feature/p1_5-anon-fail-open-policy | #19 | Merged | `ANON_FAIL_OPEN` consentito solo fuori da `prod`; per `environment=prod` `llm-strict` resta fail-closed |
-| P1.5 sql-guard adversarial | feature/p1_5-sql-guard-adversarial |  | In progress | test borderline/bypass lessicali e rimozione falsi positivi su identificatori quotati |
+| P1.5 sql-guard adversarial | feature/p1_5-sql-guard-adversarial | #20 | Merged | test borderline/bypass lessicali e rimozione falsi positivi su identificatori quotati |
+| P1.5 registry multi-env integration | feature/p1_5-registry-multi-env-tests |  | In progress | test MCP HTTP end-to-end con due target `prod` attivi e blocker su routing diagnostico ambiguo |
