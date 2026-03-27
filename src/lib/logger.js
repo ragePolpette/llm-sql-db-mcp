@@ -6,6 +6,7 @@ const LOG_LEVELS = {
   info: 1,
   debug: 2
 };
+const LOG_FORMATS = new Set(["json", "plain"]);
 
 function toJsonLine(entry) {
   try {
@@ -22,10 +23,63 @@ function toJsonLine(entry) {
   }
 }
 
+function formatPlainValue(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "[unserializable]";
+  }
+}
+
+function toPlainLine(entry) {
+  const parts = [entry.timestamp, entry.level.toUpperCase(), entry.event];
+
+  if (entry.request_id) {
+    parts.push(`request_id=${entry.request_id}`);
+  }
+
+  if (entry.session_id) {
+    parts.push(`session_id=${entry.session_id}`);
+  }
+
+  if (entry.payload && typeof entry.payload === "object" && !Array.isArray(entry.payload)) {
+    const payloadParts = Object.entries(entry.payload)
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => `${key}=${formatPlainValue(value)}`);
+
+    if (payloadParts.length > 0) {
+      parts.push(payloadParts.join(" "));
+    }
+  }
+
+  return parts.join(" ");
+}
+
 function normalizeLogLevel(level) {
   const normalized = String(level || "info").trim().toLowerCase();
   if (!Object.prototype.hasOwnProperty.call(LOG_LEVELS, normalized)) {
     throw new Error(`Unsupported LOG_LEVEL "${level}".`);
+  }
+
+  return normalized;
+}
+
+function normalizeLogFormat(format) {
+  const normalized = String(format || "json").trim().toLowerCase();
+  if (!LOG_FORMATS.has(normalized)) {
+    throw new Error(`Unsupported LOG_FORMAT "${format}".`);
   }
 
   return normalized;
@@ -113,15 +167,23 @@ function buildEntry(level, event, payload) {
   return entry;
 }
 
-export function createLogger({ level = "info", stdout = process.stdout, stderr = process.stderr } = {}) {
+export function createLogger({
+  level = "info",
+  format = "json",
+  stdout = process.stdout,
+  stderr = process.stderr
+} = {}) {
   const normalizedLevel = normalizeLogLevel(level);
+  const normalizedFormat = normalizeLogFormat(format);
 
   function writeLine(stream, entry) {
-    stream.write(`${toJsonLine(entry)}\n`);
+    const line = normalizedFormat === "plain" ? toPlainLine(entry) : toJsonLine(entry);
+    stream.write(`${line}\n`);
   }
 
   return {
     level: normalizedLevel,
+    format: normalizedFormat,
     error(event, payload = {}) {
       if (!shouldLog(normalizedLevel, "error")) {
         return;
@@ -162,8 +224,10 @@ export function createLogger({ level = "info", stdout = process.stdout, stderr =
 
 export const __loggerTestUtils = {
   hashSql,
+  normalizeLogFormat,
   normalizeLogLevel,
   redactDbPayload,
   shouldLog,
-  sqlPreview
+  sqlPreview,
+  toPlainLine
 };

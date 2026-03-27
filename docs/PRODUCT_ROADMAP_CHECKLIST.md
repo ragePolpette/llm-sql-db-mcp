@@ -109,7 +109,7 @@ Obiettivo: aumentare la credibilita' tecnica senza sovraingegnerizzare.
 
 Obiettivo: lasciare nel repo una direzione credibile, senza implementare tutto subito.
 
-- [ ] Preparare structured logging JSON opzionale.
+- [x] Preparare structured logging JSON opzionale.
 - [ ] Disegnare un modello di auth opzionale per uso futuro.
   Nota:
   - non implementarlo ora se il tool resta locale
@@ -154,4 +154,5 @@ Usare questa sezione durante il lavoro per collegare gli item alle PR.
 | P1.5 health + readiness | feature/p1_5-health-readiness | #17 | Merged | `/health` resta liveness, `/ready` segnala registry caricato e target attivi con binding runtime minimi |
 | P1.5 ANON_FAIL_OPEN policy | feature/p1_5-anon-fail-open-policy | #19 | Merged | `ANON_FAIL_OPEN` consentito solo fuori da `prod`; per `environment=prod` `llm-strict` resta fail-closed |
 | P1.5 sql-guard adversarial | feature/p1_5-sql-guard-adversarial | #20 | Merged | test borderline/bypass lessicali e rimozione falsi positivi su identificatori quotati |
-| P1.5 registry multi-env integration | feature/p1_5-registry-multi-env-tests |  | In progress | test MCP HTTP end-to-end con due target `prod` attivi e blocker su routing diagnostico ambiguo |
+| P1.5 registry multi-env integration | feature/p1_5-registry-multi-env-tests | #21 | Merged | test MCP HTTP end-to-end con due target `prod` attivi e blocker su routing diagnostico ambiguo |
+| P2 configurable log format | feature/p2-log-format |  | In progress | `LOG_FORMAT=json|plain` con default invariato JSON e opzione `plain` per debug locale |

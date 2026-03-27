@@ -111,7 +111,8 @@ function buildReadinessPayload({ config, targetRegistry, env, startedAt }) {
 export async function createApp({ cwd = process.cwd(), closeSqlPools = closeSqlServerPools } = {}) {
   const config = loadRuntimeConfig({ cwd });
   const logger = createLogger({
-    level: config.logLevel
+    level: config.logLevel,
+    format: config.logFormat
   });
   const targetRegistry = await loadTargetRegistry(config.targetsFile, { env: process.env });
   const app = createMcpExpressApp();

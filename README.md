@@ -148,6 +148,8 @@ Variabili principali:
 - `SESSION_SWEEP_INTERVAL_MS`: sweep interval delle sessioni scadute
 - `ALLOW_LOOPBACK_ORIGINS`: consente origin loopback
 - `ALLOWED_ORIGINS`: lista CSV di origin consentiti
+- `LOG_LEVEL`: `error`, `info`, `debug`
+- `LOG_FORMAT`: `json` di default; `plain` opzionale per output piu' leggibile in locale
 - `LMSTUDIO_BASE_URL`: default `http://127.0.0.1:1234/v1`
 - `OLLAMA_BASE_URL`: default `http://127.0.0.1:11434`
 - `ANON_FIELD_IDENTIFICATION`: `hybrid`, `heuristic`, `llm`
