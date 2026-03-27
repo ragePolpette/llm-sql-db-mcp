@@ -11,6 +11,7 @@ Obiettivo:
 - [PRODUCT_ROADMAP_CHECKLIST.md](./PRODUCT_ROADMAP_CHECKLIST.md): roadmap pragmatica del repo, checklist di hardening e tracking degli step completati
 - [AUTH_FUTURE_INTEGRATION.md](./AUTH_FUTURE_INTEGRATION.md): punto di integrazione per auth opzionale futura senza cambiare query engine o surface MCP
 - [VERSIONING_POLICY.md](./VERSIONING_POLICY.md): regole semplici per versionare release pubblica, contract MCP e schema del target registry
+- [../CHANGELOG.md](../CHANGELOG.md): changelog minimale del prodotto con sezione `Unreleased` e baseline `0.1.0`
 
 ## Criterio Di Inclusione
 

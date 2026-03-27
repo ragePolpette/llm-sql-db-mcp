@@ -115,7 +115,7 @@ Obiettivo: lasciare nel repo una direzione credibile, senza implementare tutto s
   - non implementarlo ora se il tool resta locale
   - basta documentare il punto di integrazione
 - [x] Definire una policy di versioning del contract MCP e della config target registry.
-- [ ] Preparare un file `CHANGELOG.md` o una policy release minimale.
+- [x] Preparare un file `CHANGELOG.md` o una policy release minimale.
 - [ ] Valutare un `Dockerfile` solo se utile per demo ripetibili locali.
 - [ ] Aggiungere note su come collegare in futuro il tool a un control plane esterno senza cambiare il query engine.
 
@@ -157,3 +157,4 @@ Usare questa sezione durante il lavoro per collegare gli item alle PR.
 | P1.5 registry multi-env integration | feature/p1_5-registry-multi-env-tests | #21 | Merged | test MCP HTTP end-to-end con due target `prod` attivi e blocker su routing diagnostico ambiguo |
 | P2 configurable log format | feature/p2-log-format | #22 | Merged | `LOG_FORMAT=json|plain` con default invariato JSON e opzione `plain` per debug locale |
 | P2 auth integration design | feature/p2-auth-integration | #23 | Merged | boundary auth futuro documentato al bordo HTTP senza cambiare query engine o surface MCP |
+| P2 versioning policy | feature/p2-versioning-policy | #24 | Merged | policy pubblica per release, contract MCP e registry + allineamento `package.json -> serverVersion` |
