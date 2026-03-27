@@ -101,7 +101,7 @@ Obiettivo: aumentare la credibilita' tecnica senza sovraingegnerizzare.
   - `/health` base
   - readiness check che segnali config/registry validi
 - [x] Rendere gli errori piu' consistenti e machine-readable.
-- [ ] Rendere esplicita la strategia per `ANON_FAIL_OPEN` e limitarla ai casi veramente tollerabili.
+- [x] Rendere esplicita la strategia per `ANON_FAIL_OPEN` e limitarla ai casi veramente tollerabili.
 - [ ] Aggiungere test adversarial su `sql-guard` per query borderline e bypass lessicali.
 - [ ] Aggiungere test di integrazione sul nuovo registry dinamico con target multipli nello stesso environment.
 
@@ -151,5 +151,6 @@ Usare questa sezione durante il lavoro per collegare gli item alle PR.
 | P1 operational notes + target examples | feature/p1-target-examples | #14 | Merged | example registry con profili dev/prod/disabled e checklist P1 riallineata allo stato reale |
 | P1 docs cleanup | feature/p1-docs-cleanup | #15 | Merged | indice `docs/` pubblico e criterio di inclusione per evitare handoff/prompt interni nel repo |
 | P1.5 request id + error model | feature/p1_5-request-id-error-model | #16 | Merged | `request_id` request-scoped nei log, errori HTTP MCP con `error_code`, tool errors con envelope JSON parseabile |
-| P1.5 health + readiness | feature/p1_5-health-readiness |  | In progress | `/health` resta liveness, `/ready` segnala registry caricato e target attivi con binding runtime minimi |
+| P1.5 health + readiness | feature/p1_5-health-readiness | #17 | Merged | `/health` resta liveness, `/ready` segnala registry caricato e target attivi con binding runtime minimi |
+| P1.5 ANON_FAIL_OPEN policy | feature/p1_5-anon-fail-open-policy |  | In progress | `ANON_FAIL_OPEN` consentito solo fuori da `prod`; per `environment=prod` `llm-strict` resta fail-closed |
 | P1.5 guard/test hardening |  |  | Todo |  |
