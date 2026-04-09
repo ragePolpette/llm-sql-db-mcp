@@ -1,6 +1,6 @@
 Step 2: Fixed Tool Surface
 
-Leggi prima [IMPLEMENTATION_PLAN.md](C:/Users/Gianmarco/Urgewalt/Yetzirah/llm-sql-db-mcp/IMPLEMENTATION_PLAN.md).
+Leggi prima [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
 Prerequisito:
 - lo step 1 deve essere già completato e committato

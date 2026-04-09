@@ -1,6 +1,6 @@
 Step 3: SQL Execution
 
-Leggi prima [IMPLEMENTATION_PLAN.md](C:/Users/Gianmarco/Urgewalt/Yetzirah/llm-sql-db-mcp/IMPLEMENTATION_PLAN.md).
+Leggi prima [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
 Prerequisito:
 - step 1 e 2 già completati e committati

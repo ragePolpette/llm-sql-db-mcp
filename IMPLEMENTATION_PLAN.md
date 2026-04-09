@@ -18,7 +18,7 @@ The first version must **not**:
 - replace the existing `llm-db-dev-mcp` / `llm-db-prod-mcp` services yet
 
 ## Project Path
-- `C:\Users\Gianmarco\Urgewalt\Yetzirah\llm-sql-db-mcp`
+- repository root (`./`)
 
 ## Recommended Stack
 - Node.js
