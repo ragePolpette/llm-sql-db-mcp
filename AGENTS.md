@@ -17,13 +17,13 @@ Valido dentro:
 - Se modifichi `package.json` o `package-lock.json`, esegui:
 
 ```powershell
-node C:\Users\Gianmarco\Urgewalt\dependency-policy\dependency-policy-check.mjs --repo . --mode auto
+node ..\dependency-policy\dependency-policy-check.mjs --repo . --mode auto
 ```
 
 - Se il check fallisce, il task non va considerato concluso senza eccezione approvata in:
 
 ```text
-C:\Users\Gianmarco\Urgewalt\SECURITY_EXCEPTIONS.md
+..\SECURITY_EXCEPTIONS.md
 ```
 
 - Se non tocchi manifest o lockfile dipendenze, questo check non e' obbligatorio.
@@ -32,3 +32,4 @@ C:\Users\Gianmarco\Urgewalt\SECURITY_EXCEPTIONS.md
 
 - Se hai toccato manifest o lockfile dipendenze, nel riepilogo finale devi riportare esplicitamente quale comando di dependency-policy hai eseguito e se e' passato o fallito.
 - Non dichiarare il task concluso omettendo un risultato dependency-policy fallito.
+

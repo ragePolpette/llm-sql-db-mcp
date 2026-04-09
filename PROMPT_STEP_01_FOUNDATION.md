@@ -1,6 +1,6 @@
 Step 1: Foundation
 
-Leggi prima [IMPLEMENTATION_PLAN.md](C:/Users/Gianmarco/Urgewalt/Yetzirah/llm-sql-db-mcp/IMPLEMENTATION_PLAN.md).
+Leggi prima [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
 Obiettivo:
 - creare lo skeleton del progetto

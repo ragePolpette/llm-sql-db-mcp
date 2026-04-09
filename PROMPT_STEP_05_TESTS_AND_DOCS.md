@@ -1,6 +1,6 @@
 Step 5: Tests and Docs
 
-Leggi prima [IMPLEMENTATION_PLAN.md](C:/Users/Gianmarco/Urgewalt/Yetzirah/llm-sql-db-mcp/IMPLEMENTATION_PLAN.md).
+Leggi prima [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
 Prerequisito:
 - step 1, 2, 3 e 4 già completati e committati
