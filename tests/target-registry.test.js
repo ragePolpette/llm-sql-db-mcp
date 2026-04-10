@@ -170,3 +170,47 @@ test("loadTargetRegistry applies per-target env overrides", async () => {
   assert.equal(target.llm_provider, "none");
   assert.equal(target.llm_model, "");
 });
+
+test("loadTargetRegistry accepts dashboard runtime export aliases for llm provider and model", async () => {
+  const filePath = writeTempTargetsFile({
+    version: 1,
+    publisher: "mcp-dashboard",
+    service_id: "llm-sql-db-mcp",
+    apply_strategy: "restart_or_start",
+    generated_at: "2026-04-10T09:00:00+02:00",
+    target_count: 1,
+    active_target_count: 1,
+    targets: [
+      {
+        target_id: "prod-main",
+        display_name: "Prod Main",
+        environment: "prod",
+        db_kind: "sqlserver",
+        status: "active",
+        connection_env_var: "DB_PROD_MAIN_CONNECTION_STRING",
+        connection_vault_ref: "vault://db.prod.main",
+        read_enabled: true,
+        write_enabled: false,
+        write_policy: "deny",
+        anonymization_enabled: true,
+        anonymization_mode: "hybrid",
+        anonymization_provider: "lmstudio",
+        anonymization_model: "google/gemma-3-4b",
+        max_rows: 100,
+        max_result_bytes: 1024,
+        allowed_tools: ["db_target_info", "db_policy_info", "db_read"],
+        state: {
+          runtime_status: "ready",
+          last_synced_at: "2026-04-10T09:00:00+02:00",
+          last_error: null
+        }
+      }
+    ]
+  });
+
+  const registry = await loadTargetRegistry(filePath);
+  const target = registry.get("prod-main");
+  assert.equal(target.llm_provider, "lmstudio");
+  assert.equal(target.llm_model, "google/gemma-3-4b");
+  assert.equal(target.anonymization_mode, "hybrid");
+});
