@@ -12,6 +12,7 @@ The server exposes a small stable MCP surface for:
 - inspecting target metadata and effective policies
 - executing read-safe queries on allowed targets
 - executing controlled writes only where the target policy permits them
+- running diagnostic reads with environment resolution or explicit target pinning
 - applying deterministic or provider-assisted anonymization when required
 
 ## Why It Exists
