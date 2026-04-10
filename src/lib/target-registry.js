@@ -90,6 +90,24 @@ function parseBooleanOverride(value, label) {
   throw new Error(`${label} must be a boolean value.`);
 }
 
+function normalizeRuntimeTarget(target) {
+  if (!target || typeof target !== "object" || Array.isArray(target)) {
+    return target;
+  }
+
+  const nextTarget = { ...target };
+
+  if (nextTarget.llm_provider === undefined && nextTarget.anonymization_provider !== undefined) {
+    nextTarget.llm_provider = nextTarget.anonymization_provider;
+  }
+
+  if (nextTarget.llm_model === undefined && nextTarget.anonymization_model !== undefined) {
+    nextTarget.llm_model = nextTarget.anonymization_model;
+  }
+
+  return nextTarget;
+}
+
 function applyTargetEnvOverrides(target, env) {
   const prefix = normalizeTargetEnvPrefix(target.target_id);
   const nextTarget = { ...target };
@@ -190,7 +208,7 @@ export async function loadTargetRegistry(targetsFilePath, { env = process.env } 
   }
 
   const rawTargets = Array.isArray(parsedJson?.targets)
-    ? parsedJson.targets.map(target => applyTargetEnvOverrides(target, env))
+    ? parsedJson.targets.map(target => applyTargetEnvOverrides(normalizeRuntimeTarget(target), env))
     : parsedJson?.targets;
 
   const parsed = targetsFileSchema.safeParse({
