@@ -283,3 +283,98 @@ test("runDiagnosticQuery refuses ambiguous environment resolution when multiple 
   assert.match(result.structuredContent.blockers[0], /Multiple active targets matched database_target "prod"/);
   assert.match(result.structuredContent.blockers[0], /prod-main, prod-reporting/);
 });
+
+test("runDiagnosticQuery accepts explicit target_id when multiple active targets share the same environment", async () => {
+  let selectedConnectionString = null;
+
+  const handlers = createHandlers({
+    targetRegistry: createTestRegistry(true, [
+      createTarget({
+        target_id: "prod-reporting",
+        display_name: "Prod Reporting",
+        environment: "prod",
+        status: "active",
+        connection_env_var: "DB_PROD_REPORTING_CONNECTION_STRING",
+        read_enabled: true,
+        write_enabled: false,
+        anonymization_enabled: true,
+        anonymization_mode: "hybrid",
+        llm_provider: "lmstudio",
+        llm_model: "gemma",
+        max_rows: 5,
+        max_result_bytes: 1024,
+        allowed_tools: ["db_target_info", "db_policy_info", "db_read", "db_write"]
+      })
+    ]),
+    env: {
+      DB_DEV_MAIN_CONNECTION_STRING: "Server=dev;Database=Test;",
+      DB_PROD_MAIN_CONNECTION_STRING: "Server=prod;Database=Main;",
+      DB_PROD_REPORTING_CONNECTION_STRING: "Server=prod;Database=Reporting;"
+    },
+    providerConfig: {
+      lmstudioBaseUrl: "http://127.0.0.1:1234/v1",
+      ollamaBaseUrl: "http://127.0.0.1:11434"
+    },
+    executeSqlRead: async args => {
+      selectedConnectionString = args.connectionString;
+      return {
+        columns: [{ name: "value", nullable: false, type: "Int" }],
+        rows: [{ value: 7 }],
+        row_count: 1,
+        total_rows_before_limits: 1,
+        max_rows_applied: 5,
+        max_result_bytes_applied: 1024,
+        result_bytes: 8,
+        truncated: false,
+        duration_ms: 2
+      };
+    },
+    anonymizeQueryResult: async ({ queryResult }) => ({
+      ...queryResult,
+      anonymization_applied: true,
+      anonymization_provider: "lmstudio",
+      anonymization_mode: "hybrid"
+    })
+  });
+
+  const result = await handlers.runDiagnosticQuery({
+    database_target: "prod",
+    target_id: "prod-reporting",
+    ticket_key: "TICKET-5",
+    phase: "triage",
+    query: "SELECT 7 AS value"
+  });
+
+  assert.equal(selectedConnectionString, "Server=prod;Database=Reporting;");
+  assert.equal(result.structuredContent.used.target_id, "prod-reporting");
+  assert.deepEqual(result.structuredContent.rows, [{ value: 7 }]);
+  assert.deepEqual(result.structuredContent.blockers, []);
+});
+
+test("runDiagnosticQuery rejects explicit target_id when its environment mismatches database_target", async () => {
+  const handlers = createHandlers({
+    targetRegistry: createTestRegistry(),
+    env: {
+      DB_DEV_MAIN_CONNECTION_STRING: "Server=dev;Database=Test;",
+      DB_PROD_MAIN_CONNECTION_STRING: "Server=prod;Database=Prod;"
+    },
+    executeSqlRead: async () => {
+      throw new Error("should not be called");
+    }
+  });
+
+  const result = await handlers.runDiagnosticQuery({
+    database_target: "dev",
+    target_id: "prod-main",
+    ticket_key: "TICKET-6",
+    phase: "triage",
+    query: "SELECT 1"
+  });
+
+  assert.equal(result.structuredContent.used.target_id, "prod-main");
+  assert.deepEqual(result.structuredContent.rows, []);
+  assert.match(
+    result.structuredContent.blockers[0],
+    /Target "prod-main" belongs to environment "prod", not "dev"/
+  );
+});

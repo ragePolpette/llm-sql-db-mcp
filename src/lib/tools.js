@@ -218,9 +218,14 @@ export function registerFixedTools(server, handlers) {
     'run_diagnostic_query',
     {
       title: 'Run Diagnostic Query',
-      description: 'Resolve a dev/prod database target when exactly one active target matches, run the query through db_read, and return a compact diagnostic payload for harness use.',
+      description: 'Resolve a dev/prod database target, optionally pin to an explicit target_id, run the query through db_read, and return a compact diagnostic payload for harness use.',
       inputSchema: {
         database_target: z.enum(['dev', 'prod']).describe('Logical harness target to resolve to exactly one active target_id.'),
+        target_id: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('Optional explicit target_id override. When provided it must be active and belong to the requested database_target environment.'),
         ticket_key: z.string().min(1).describe('Stable ticket identifier used by the harness.'),
         phase: z.enum(['triage', 'execution']).describe('Harness phase for the diagnostic request.'),
         query: z.string().min(1).describe('SQL text passed to db_read after target resolution.'),

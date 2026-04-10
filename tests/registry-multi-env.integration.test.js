@@ -111,7 +111,7 @@ test("integration: multiple active prod targets are surfaced by the registry and
   process.env.PORT = String(port);
   process.env.DB_DEV_MAIN_CONNECTION_STRING = "Server=dev;Database=Test;";
   process.env.DB_PROD_MAIN_CONNECTION_STRING = "Server=prod;Database=Main;";
-  process.env.DB_PROD_REPORTING_CONNECTION_STRING = "Server=prod;Database=Reporting;";
+  delete process.env.DB_PROD_REPORTING_CONNECTION_STRING;
 
   const runtime = await startServer({ cwd });
   const client = new Client({ name: "multi-env-test-client", version: "1.0.0" }, { capabilities: {} });
@@ -150,6 +150,25 @@ test("integration: multiple active prod targets are surfaced by the registry and
       /Multiple active targets matched database_target "prod"/
     );
     assert.match(diagnosticResult.structuredContent.blockers[0], /prod-main, prod-reporting/);
+
+    const explicitDiagnosticResult = await client.callTool({
+      name: "run_diagnostic_query",
+      arguments: {
+        database_target: "prod",
+        target_id: "prod-reporting",
+        ticket_key: "TICKET-REGISTRY-2",
+        phase: "triage",
+        query: "SELECT 1 AS value"
+      }
+    });
+
+    assert.equal(explicitDiagnosticResult.isError, undefined);
+    assert.equal(explicitDiagnosticResult.structuredContent.used.target_id, "prod-reporting");
+    assert.equal(explicitDiagnosticResult.structuredContent.rows.length, 0);
+    assert.match(
+      explicitDiagnosticResult.structuredContent.blockers[0],
+      /DB_PROD_REPORTING_CONNECTION_STRING/
+    );
   } finally {
     await client.close().catch(() => {});
     await runtime.close();
