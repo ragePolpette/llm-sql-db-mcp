@@ -54,7 +54,39 @@ function resolveEffectiveMaxRows(requestedMaxRows, targetMaxRows) {
 
   return Math.min(requestedMaxRows, targetMaxRows);
 }
-function resolveDiagnosticTarget(targetRegistry, databaseTarget) {
+function resolveDiagnosticTarget(targetRegistry, databaseTarget, explicitTargetId = null) {
+  if (explicitTargetId) {
+    const explicitTarget = targetRegistry.get(explicitTargetId);
+
+    if (!explicitTarget) {
+      return {
+        target: null,
+        blockers: [`Unknown target_id "${explicitTargetId}" for diagnostic query.`]
+      };
+    }
+
+    if (explicitTarget.status !== "active") {
+      return {
+        target: null,
+        blockers: [`Target "${explicitTargetId}" is not active and cannot be used for diagnostic query.`]
+      };
+    }
+
+    if (explicitTarget.environment !== databaseTarget) {
+      return {
+        target: null,
+        blockers: [
+          `Target "${explicitTargetId}" belongs to environment "${explicitTarget.environment}", not "${databaseTarget}".`
+        ]
+      };
+    }
+
+    return {
+      target: explicitTarget,
+      blockers: []
+    };
+  }
+
   const matches = targetRegistry.list().filter(target => target.environment === databaseTarget);
   const activeMatches = matches.filter(target => target.status === "active");
 
@@ -148,11 +180,11 @@ export function createHandlers({
           db_read: "Usa target_id esplicito e solo SQL read-safe.",
           db_write: "Usa target_id esplicito; disponibile solo se il target abilita la write policy.",
           run_diagnostic_query:
-            "Wrapper harness-friendly: risolve dev/prod su un target reale e normalizza l'output diagnostico."
+            "Wrapper harness-friendly: risolve dev/prod su un target reale oppure usa target_id esplicito coerente con l'environment e normalizza l'output diagnostico."
         },
         target_selection_flow: [
           "Chiama db_target_list",
-          "Scegli il target_id esplicito oppure usa run_diagnostic_query con database_target=dev|prod",
+          "Scegli il target_id esplicito oppure usa run_diagnostic_query con database_target=dev|prod e target_id opzionale",
           "Verifica policy e limiti con db_target_info/db_policy_info prima di query sensibili"
         ],
         boundaries: [
@@ -385,19 +417,20 @@ export function createHandlers({
 
     async runDiagnosticQuery({
       database_target: databaseTarget,
+      target_id: explicitTargetId = null,
       ticket_key: ticketKey,
       phase,
       query,
       parameters = {}
     }) {
-      const resolved = resolveDiagnosticTarget(targetRegistry, databaseTarget);
+      const resolved = resolveDiagnosticTarget(targetRegistry, databaseTarget, explicitTargetId);
       const blockers = [...resolved.blockers];
 
       if (!resolved.target) {
         return createJsonResult({
           used: {
             database_target: databaseTarget,
-            target_id: null,
+            target_id: explicitTargetId,
             ticket_key: ticketKey,
             phase,
             tool_name: 'db_read'
