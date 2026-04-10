@@ -6,8 +6,8 @@ Il formato segue in modo leggero [Keep a Changelog](https://keepachangelog.com/e
 
 ## [Unreleased]
 
-### Changed
-- Nessuna voce ancora registrata. Aggiornare questa sezione quando una branch modifica contract MCP, schema registry, comportamento runtime o posture documentata del prodotto.
+### Added
+- `run_diagnostic_query` now accepts an optional explicit `target_id` override, allowing deterministic diagnostic reads even when multiple active targets share the same environment.
 
 ## [0.1.0] - 2026-03-27
 
