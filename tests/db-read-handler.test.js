@@ -21,7 +21,8 @@ function createTarget({
   llm_model,
   max_rows,
   max_result_bytes,
-  allowed_tools
+  allowed_tools,
+  state = undefined
 }) {
   return {
     target_id,
@@ -76,7 +77,8 @@ function createTarget({
       max_rows,
       max_result_bytes,
       allowed_tools
-    }
+    },
+    state
   };
 }
 
@@ -337,12 +339,66 @@ test("dbRead emits query_in and query_out events for dashboard inspection", asyn
     sql: "SELECT name FROM dbo.Users"
   });
 
-  assert.equal(events.length, 2);
+  assert.equal(events.length, 6);
   assert.equal(events[0].event, "query_in");
   assert.equal(events[0].payload.tool, "db_read");
-  assert.equal(events[1].event, "query_out");
-  assert.equal(events[1].payload.rowCount, 1);
-  assert.equal(events[1].payload.response.anonymizationApplied, true);
+  assert.equal(events[1].event, "db_driver_start");
+  assert.equal(events[2].event, "db_driver_done");
+  assert.equal(events[3].event, "anonymizer_start");
+  assert.equal(events[4].event, "anonymizer_done");
+  assert.equal(events[5].event, "query_out");
+});
+
+test("dbRead emits query_failed when runtime readiness blocks execution", async () => {
+  const events = [];
+
+  const registry = new TargetRegistry([
+    createTarget({
+      target_id: "dev-main",
+      display_name: "Dev Main",
+      environment: "dev",
+      status: "active",
+      connection_env_var: "DB_DEV_MAIN_CONNECTION_STRING",
+      read_enabled: true,
+      write_enabled: true,
+      anonymization_enabled: false,
+      anonymization_mode: "off",
+      llm_provider: "none",
+      llm_model: "",
+      max_rows: 5,
+      max_result_bytes: 1024,
+      allowed_tools: ["db_target_info", "db_policy_info", "db_read", "db_write"],
+      state: {
+        runtime_status: "vault_locked",
+        last_error: "Vault bloccato"
+      }
+    })
+  ]);
+
+  const handlers = createHandlers({
+    targetRegistry: registry,
+    env: {
+      DB_DEV_MAIN_CONNECTION_STRING: "Server=.;Database=Test;Trusted_Connection=True;"
+    },
+    executeSqlRead: async () => {
+      throw new Error("driver should not be called");
+    },
+    logDbEvent: (event, payload) => {
+      events.push({ event, payload });
+    }
+  });
+
+  const result = await handlers.dbRead({
+    target_id: "dev-main",
+    sql: "SELECT 1"
+  });
+
+  assert.equal(result.isError, true);
+  assert.equal(parseErrorEnvelope(result).error.code, "db_read_failed");
+  assert.match(result.content[0].text, /not runtime-ready/i);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].event, "query_failed");
+  assert.match(events[0].payload.error, /vault_locked/i);
 });
 
 test("dbWrite executes a write statement when target write is enabled", async () => {
