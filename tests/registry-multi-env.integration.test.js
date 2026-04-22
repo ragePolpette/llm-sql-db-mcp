@@ -137,7 +137,6 @@ test("integration: multiple active prod targets are surfaced by the registry and
       arguments: {
         database_target: "prod",
         ticket_key: "TICKET-REGISTRY-1",
-        phase: "triage",
         query: "SELECT 1 AS value"
       }
     });
@@ -157,7 +156,6 @@ test("integration: multiple active prod targets are surfaced by the registry and
         database_target: "prod",
         target_id: "prod-reporting",
         ticket_key: "TICKET-REGISTRY-2",
-        phase: "triage",
         query: "SELECT 1 AS value"
       }
     });
