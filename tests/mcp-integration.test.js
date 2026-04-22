@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
 import net from "node:net";
+import os from "node:os";
+import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { startServer } from "../src/server.js";
@@ -129,6 +132,91 @@ test("integration: health, tool surface, target tools, and db_read error path wo
       delete process.env.DB_PROD_MAIN_CONNECTION_STRING;
     } else {
       process.env.DB_PROD_MAIN_CONNECTION_STRING = originalEnv.DB_PROD_MAIN_CONNECTION_STRING;
+    }
+  }
+});
+
+test("integration: readiness reports runtime-blocked targets exported by the dashboard", async () => {
+  const port = await getFreePort();
+  const originalEnv = {
+    PORT: process.env.PORT,
+    TARGETS_FILE: process.env.TARGETS_FILE,
+    DB_DEV_MAIN_CONNECTION_STRING: process.env.DB_DEV_MAIN_CONNECTION_STRING
+  };
+
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "llm-sql-db-mcp-runtime-"));
+  const runtimeTargetsPath = path.join(tempDir, "targets.runtime.json");
+  await fs.writeFile(
+    runtimeTargetsPath,
+    JSON.stringify({
+      version: 1,
+      publisher: "mcp-dashboard",
+      service_id: "llm-sql-db-mcp",
+      apply_strategy: "restart_or_start",
+      targets: [
+        {
+          target_id: "dev-main",
+          display_name: "Dev Main",
+          environment: "dev",
+          db_kind: "sqlserver",
+          status: "active",
+          connection_env_var: "DB_DEV_MAIN_CONNECTION_STRING",
+          read_enabled: true,
+          write_enabled: true,
+          anonymization_enabled: false,
+          anonymization_mode: "off",
+          llm_provider: "none",
+          llm_model: "",
+          max_rows: 100,
+          max_result_bytes: 1024,
+          allowed_tools: ["db_target_info", "db_policy_info", "db_read", "db_write"],
+          state: {
+            runtime_status: "vault_locked",
+            last_synced_at: "2026-04-22T10:00:00+02:00",
+            last_error: "Vault bloccato"
+          }
+        }
+      ]
+    }),
+    "utf8"
+  );
+
+  process.env.PORT = String(port);
+  process.env.TARGETS_FILE = runtimeTargetsPath;
+  process.env.DB_DEV_MAIN_CONNECTION_STRING = "Server=.;Database=Dev;";
+
+  const runtime = await startServer({ cwd: process.cwd() });
+
+  try {
+    const readinessResponse = await fetch(
+      `http://${runtime.config.host}:${runtime.config.port}${runtime.config.readinessPath}`
+    );
+    const readinessPayload = await readinessResponse.json();
+    assert.equal(readinessResponse.status, 503);
+    assert.equal(readinessPayload.status, "not_ready");
+    assert.equal(readinessPayload.checks.active_targets_runtime_blocked.length, 1);
+    assert.equal(readinessPayload.checks.active_targets_runtime_blocked[0].target_id, "dev-main");
+    assert.equal(readinessPayload.checks.active_targets_runtime_blocked[0].runtime_status, "vault_locked");
+  } finally {
+    await runtime.close();
+    await fs.rm(tempDir, { recursive: true, force: true });
+
+    if (originalEnv.PORT === undefined) {
+      delete process.env.PORT;
+    } else {
+      process.env.PORT = originalEnv.PORT;
+    }
+
+    if (originalEnv.TARGETS_FILE === undefined) {
+      delete process.env.TARGETS_FILE;
+    } else {
+      process.env.TARGETS_FILE = originalEnv.TARGETS_FILE;
+    }
+
+    if (originalEnv.DB_DEV_MAIN_CONNECTION_STRING === undefined) {
+      delete process.env.DB_DEV_MAIN_CONNECTION_STRING;
+    } else {
+      process.env.DB_DEV_MAIN_CONNECTION_STRING = originalEnv.DB_DEV_MAIN_CONNECTION_STRING;
     }
   }
 });

@@ -144,6 +144,21 @@ function redactDbPayload(event, payload, level) {
     };
   }
 
+  if (["db_driver_start", "db_driver_done", "anonymizer_start", "anonymizer_done", "query_failed"].includes(event)) {
+    return {
+      tool: payload.tool ?? null,
+      target_id: payload.target_id ?? null,
+      runtime_status: payload.runtime_status ?? null,
+      provider: payload.provider ?? null,
+      mode: payload.mode ?? null,
+      row_count: payload.rowCount ?? null,
+      rows_affected: payload.rowsAffected ?? null,
+      truncated: payload.truncated ?? null,
+      duration_ms: payload.durationMs ?? null,
+      error: payload.error ?? null
+    };
+  }
+
   return payload;
 }
 
@@ -213,7 +228,7 @@ export function createLogger({
       }
 
       if (normalizedLevel === "info") {
-        if (event === "query_out") {
+        if (["query_out", "query_failed"].includes(event)) {
           writeLine(stdout, buildEntry("info", `db.${event}`, sanitizedPayload));
         }
         return;

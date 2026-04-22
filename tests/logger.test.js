@@ -69,6 +69,27 @@ test("createLogger omits db query_in logs at info level but keeps sanitized quer
   assert.equal(Object.prototype.hasOwnProperty.call(entry.payload, "response"), false);
 });
 
+test("createLogger keeps db query_failed at info level with sanitized payload", () => {
+  const stdout = createWritableMemoryStream();
+  const logger = createLogger({
+    level: "info",
+    stdout
+  });
+
+  logger.dbEvent("query_failed", {
+    tool: "db_read",
+    target_id: "dev-main",
+    error: "Target \"dev-main\" is not runtime-ready (vault_locked: Vault bloccato)."
+  });
+
+  assert.equal(stdout.chunks.length, 1);
+  const entry = JSON.parse(stdout.chunks[0]);
+  assert.equal(entry.event, "db.query_failed");
+  assert.equal(entry.payload.tool, "db_read");
+  assert.equal(entry.payload.target_id, "dev-main");
+  assert.match(entry.payload.error, /runtime-ready/i);
+});
+
 test("normalizeLogLevel rejects unsupported values", () => {
   assert.throws(
     () => __loggerTestUtils.normalizeLogLevel("trace"),

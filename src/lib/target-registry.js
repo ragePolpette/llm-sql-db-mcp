@@ -4,6 +4,11 @@ import { z } from "zod";
 const allowedProviders = ["none", "lmstudio", "ollama"];
 const allowedStatuses = ["active", "disabled"];
 const allowedAnonymizationModes = ["off", "direct", "deterministic", "hybrid", "llm-strict"];
+const targetStateSchema = z.object({
+  runtime_status: z.string().min(1).optional(),
+  last_synced_at: z.string().nullable().optional(),
+  last_error: z.string().nullable().optional()
+}).optional();
 
 const targetSchema = z
   .object({
@@ -21,7 +26,8 @@ const targetSchema = z
     llm_model: z.string(),
     max_rows: z.number().int().positive(),
     max_result_bytes: z.number().int().positive(),
-    allowed_tools: z.array(z.string().min(1)).default([])
+    allowed_tools: z.array(z.string().min(1)).default([]),
+    state: targetStateSchema
   })
   .superRefine((target, ctx) => {
     if (!target.anonymization_enabled) {
