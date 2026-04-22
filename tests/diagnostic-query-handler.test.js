@@ -378,3 +378,67 @@ test("runDiagnosticQuery rejects explicit target_id when its environment mismatc
     /Target "prod-main" belongs to environment "prod", not "dev"/
   );
 });
+
+test("runDiagnosticQuery allows missing ticket_key and phase metadata", async () => {
+  const handlers = createHandlers({
+    targetRegistry: createTestRegistry(),
+    env: {
+      DB_DEV_MAIN_CONNECTION_STRING: "Server=dev;Database=Test;",
+      DB_PROD_MAIN_CONNECTION_STRING: "Server=prod;Database=Prod;"
+    },
+    executeSqlRead: async () => ({
+      columns: [{ name: "value", nullable: false, type: "Int" }],
+      rows: [{ value: 1 }],
+      row_count: 1,
+      total_rows_before_limits: 1,
+      max_rows_applied: 5,
+      max_result_bytes_applied: 1024,
+      result_bytes: 8,
+      truncated: false,
+      duration_ms: 2
+    })
+  });
+
+  const result = await handlers.runDiagnosticQuery({
+    database_target: "dev",
+    query: "SELECT 1 AS value"
+  });
+
+  assert.equal(result.structuredContent.used.ticket_key, null);
+  assert.equal(result.structuredContent.used.phase, null);
+  assert.equal(result.structuredContent.summary.ticket_key, null);
+  assert.equal(result.structuredContent.summary.phase, null);
+});
+
+test("runDiagnosticQuery normalizes blank ticket_key and phase to null", async () => {
+  const handlers = createHandlers({
+    targetRegistry: createTestRegistry(),
+    env: {
+      DB_DEV_MAIN_CONNECTION_STRING: "Server=dev;Database=Test;",
+      DB_PROD_MAIN_CONNECTION_STRING: "Server=prod;Database=Prod;"
+    },
+    executeSqlRead: async () => ({
+      columns: [{ name: "value", nullable: false, type: "Int" }],
+      rows: [{ value: 1 }],
+      row_count: 1,
+      total_rows_before_limits: 1,
+      max_rows_applied: 5,
+      max_result_bytes_applied: 1024,
+      result_bytes: 8,
+      truncated: false,
+      duration_ms: 2
+    })
+  });
+
+  const result = await handlers.runDiagnosticQuery({
+    database_target: "dev",
+    ticket_key: "   ",
+    phase: "   ",
+    query: "SELECT 1 AS value"
+  });
+
+  assert.equal(result.structuredContent.used.ticket_key, null);
+  assert.equal(result.structuredContent.used.phase, null);
+  assert.equal(result.structuredContent.summary.ticket_key, null);
+  assert.equal(result.structuredContent.summary.phase, null);
+});
