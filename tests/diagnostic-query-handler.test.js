@@ -149,7 +149,6 @@ test("runDiagnosticQuery maps database_target=dev to the dev target", async () =
   const result = await handlers.runDiagnosticQuery({
     database_target: "dev",
     ticket_key: "TICKET-1",
-    phase: "triage",
     query: "SELECT 1 AS value"
   });
 
@@ -204,7 +203,6 @@ test("runDiagnosticQuery maps database_target=prod to the prod target and preser
   const result = await handlers.runDiagnosticQuery({
     database_target: "prod",
     ticket_key: "TICKET-2",
-    phase: "execution",
     query: "SELECT name FROM dbo.Users"
   });
 
@@ -230,7 +228,6 @@ test("runDiagnosticQuery returns a clear blocker when the target is unavailable"
   const result = await handlers.runDiagnosticQuery({
     database_target: "prod",
     ticket_key: "TICKET-3",
-    phase: "triage",
     query: "SELECT 1"
   });
 
@@ -273,7 +270,6 @@ test("runDiagnosticQuery refuses ambiguous environment resolution when multiple 
   const result = await handlers.runDiagnosticQuery({
     database_target: "prod",
     ticket_key: "TICKET-4",
-    phase: "triage",
     query: "SELECT 1"
   });
 
@@ -341,7 +337,6 @@ test("runDiagnosticQuery accepts explicit target_id when multiple active targets
     database_target: "prod",
     target_id: "prod-reporting",
     ticket_key: "TICKET-5",
-    phase: "triage",
     query: "SELECT 7 AS value"
   });
 
@@ -367,7 +362,6 @@ test("runDiagnosticQuery rejects explicit target_id when its environment mismatc
     database_target: "dev",
     target_id: "prod-main",
     ticket_key: "TICKET-6",
-    phase: "triage",
     query: "SELECT 1"
   });
 
@@ -379,7 +373,7 @@ test("runDiagnosticQuery rejects explicit target_id when its environment mismatc
   );
 });
 
-test("runDiagnosticQuery allows missing ticket_key and phase metadata", async () => {
+test("runDiagnosticQuery allows missing optional diagnostic metadata", async () => {
   const handlers = createHandlers({
     targetRegistry: createTestRegistry(),
     env: {
@@ -405,12 +399,10 @@ test("runDiagnosticQuery allows missing ticket_key and phase metadata", async ()
   });
 
   assert.equal(result.structuredContent.used.ticket_key, null);
-  assert.equal(result.structuredContent.used.phase, null);
   assert.equal(result.structuredContent.summary.ticket_key, null);
-  assert.equal(result.structuredContent.summary.phase, null);
 });
 
-test("runDiagnosticQuery normalizes blank ticket_key and phase to null", async () => {
+test("runDiagnosticQuery normalizes blank ticket_key to null", async () => {
   const handlers = createHandlers({
     targetRegistry: createTestRegistry(),
     env: {
@@ -433,12 +425,9 @@ test("runDiagnosticQuery normalizes blank ticket_key and phase to null", async (
   const result = await handlers.runDiagnosticQuery({
     database_target: "dev",
     ticket_key: "   ",
-    phase: "   ",
     query: "SELECT 1 AS value"
   });
 
   assert.equal(result.structuredContent.used.ticket_key, null);
-  assert.equal(result.structuredContent.used.phase, null);
   assert.equal(result.structuredContent.summary.ticket_key, null);
-  assert.equal(result.structuredContent.summary.phase, null);
 });

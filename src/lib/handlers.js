@@ -119,7 +119,7 @@ function normalizeDiagnosticMetadataValue(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function createDiagnosticSummary({ target, databaseTarget, ticketKey, phase, result }) {
+function createDiagnosticSummary({ target, databaseTarget, ticketKey, result }) {
   const rows = Array.isArray(result?.rows) ? result.rows : [];
   const columns = Array.isArray(result?.columns) ? result.columns : [];
 
@@ -127,7 +127,6 @@ function createDiagnosticSummary({ target, databaseTarget, ticketKey, phase, res
     target_id: target?.target_id ?? null,
     database_target: databaseTarget,
     ticket_key: normalizeDiagnosticMetadataValue(ticketKey),
-    phase: normalizeDiagnosticMetadataValue(phase),
     row_count: result?.row_count ?? 0,
     total_rows_before_limits: result?.total_rows_before_limits ?? 0,
     truncated: result?.truncated ?? false,
@@ -502,12 +501,10 @@ export function createHandlers({
       database_target: databaseTarget,
       target_id: explicitTargetId = null,
       ticket_key: ticketKey,
-      phase,
       query,
       parameters = {}
     }) {
       const normalizedTicketKey = normalizeDiagnosticMetadataValue(ticketKey);
-      const normalizedPhase = normalizeDiagnosticMetadataValue(phase);
       const resolved = resolveDiagnosticTarget(targetRegistry, databaseTarget, explicitTargetId);
       const blockers = [...resolved.blockers];
 
@@ -517,7 +514,6 @@ export function createHandlers({
             database_target: databaseTarget,
             target_id: explicitTargetId,
             ticket_key: normalizedTicketKey,
-            phase: normalizedPhase,
             tool_name: 'db_read'
           },
           rows: [],
@@ -525,7 +521,6 @@ export function createHandlers({
             target: null,
             databaseTarget,
             ticketKey: normalizedTicketKey,
-            phase: normalizedPhase,
             result: { rows: [] }
           }),
           blockers
@@ -545,7 +540,6 @@ export function createHandlers({
             database_target: databaseTarget,
             target_id: resolved.target.target_id,
             ticket_key: normalizedTicketKey,
-            phase: normalizedPhase,
             tool_name: 'db_read'
           },
           rows: [],
@@ -553,7 +547,6 @@ export function createHandlers({
             target: resolved.target,
             databaseTarget,
             ticketKey: normalizedTicketKey,
-            phase: normalizedPhase,
             result: {}
           }),
           blockers
@@ -566,7 +559,6 @@ export function createHandlers({
           database_target: databaseTarget,
           target_id: resolved.target.target_id,
           ticket_key: normalizedTicketKey,
-          phase: normalizedPhase,
           tool_name: 'db_read'
         },
         rows: Array.isArray(structured.rows) ? structured.rows : [],
@@ -574,7 +566,6 @@ export function createHandlers({
           target: resolved.target,
           databaseTarget,
           ticketKey: normalizedTicketKey,
-          phase: normalizedPhase,
           result: structured
         }),
         blockers

@@ -11,6 +11,7 @@ export function toSafeTargetSummary(target) {
     environment: target.environment,
     db_kind: target.db_kind,
     status: target.status,
+    runtime_status: target.state?.runtime_status ?? null,
     read_enabled: target.read_enabled,
     write_enabled: target.write_enabled,
     anonymization_enabled: target.anonymization_enabled,

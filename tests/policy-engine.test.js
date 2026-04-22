@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildPolicyInfo, evaluateToolPolicy } from "../src/lib/policy-engine.js";
+import { buildPolicyInfo, evaluateToolPolicy, toSafeTargetInfo, toSafeTargetSummary } from "../src/lib/policy-engine.js";
 
 const activeProdTarget = {
   target_id: "prod-main",
@@ -50,4 +50,25 @@ test("evaluateToolPolicy denies db_write when write is disabled", () => {
 
   assert.equal(policy.allowed, false);
   assert.match(policy.denial_reason, /Write access is disabled/i);
+});
+
+test("safe target views expose runtime_status when present", () => {
+  const target = {
+    ...activeProdTarget,
+    display_name: "Prod Main",
+    environment: "prod",
+    db_kind: "sqlserver",
+    llm_provider: "lmstudio",
+    llm_model: "gemma",
+    anonymization_mode: "hybrid",
+    max_rows: 100,
+    max_result_bytes: 1024,
+    state: {
+      runtime_status: "vault_locked",
+      last_error: "Vault bloccato"
+    }
+  };
+
+  assert.equal(toSafeTargetSummary(target).runtime_status, "vault_locked");
+  assert.equal(toSafeTargetInfo(target).runtime_status, "vault_locked");
 });

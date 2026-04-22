@@ -92,12 +92,14 @@ test("integration: health, tool surface, target tools, and db_read error path wo
 
     const targetList = await client.callTool({ name: "db_target_list", arguments: {} });
     assert.equal(targetList.structuredContent.targets.length, 2);
+    assert.equal(targetList.structuredContent.targets[0].runtime_status, null);
 
     const targetInfo = await client.callTool({
       name: "db_target_info",
       arguments: { target_id: "dev-main" }
     });
     assert.equal(targetInfo.structuredContent.target_id, "dev-main");
+    assert.equal(targetInfo.structuredContent.runtime_status, null);
 
     const policyInfo = await client.callTool({
       name: "db_policy_info",
