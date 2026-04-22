@@ -87,11 +87,28 @@ function getActiveTargetsMissingConnectionEnv(targetRegistry, env) {
     }));
 }
 
+function getActiveTargetsRuntimeBlocked(targetRegistry) {
+  return targetRegistry
+    .list()
+    .filter(target => target.status === "active")
+    .filter(target => {
+      const runtimeStatus = String(target?.state?.runtime_status || "").trim().toLowerCase();
+      return runtimeStatus && runtimeStatus !== "ready";
+    })
+    .map(target => ({
+      target_id: target.target_id,
+      environment: target.environment,
+      runtime_status: target.state?.runtime_status ?? null,
+      last_error: target.state?.last_error ?? null
+    }));
+}
+
 function buildReadinessPayload({ config, targetRegistry, env, startedAt }) {
   const targets = targetRegistry.list();
   const activeTargets = targets.filter(target => target.status === "active");
   const missingConnectionEnv = getActiveTargetsMissingConnectionEnv(targetRegistry, env);
-  const ready = activeTargets.length > 0 && missingConnectionEnv.length === 0;
+  const runtimeBlockedTargets = getActiveTargetsRuntimeBlocked(targetRegistry);
+  const ready = activeTargets.length > 0 && missingConnectionEnv.length === 0 && runtimeBlockedTargets.length === 0;
 
   return {
     status: ready ? "ready" : "not_ready",
@@ -103,7 +120,8 @@ function buildReadinessPayload({ config, targetRegistry, env, startedAt }) {
       registry_loaded: true,
       target_count: targets.length,
       active_target_count: activeTargets.length,
-      active_targets_missing_connection_env: missingConnectionEnv
+      active_targets_missing_connection_env: missingConnectionEnv,
+      active_targets_runtime_blocked: runtimeBlockedTargets
     }
   };
 }
