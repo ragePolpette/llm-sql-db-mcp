@@ -7,6 +7,7 @@ const targetSummarySchema = z.object({
   environment: z.string(),
   db_kind: z.literal("sqlserver"),
   status: z.string(),
+  runtime_status: z.string().nullable(),
   read_enabled: z.boolean(),
   write_enabled: z.boolean(),
   anonymization_enabled: z.boolean(),
@@ -34,7 +35,6 @@ const diagnosticUsedSchema = z.object({
   database_target: z.enum(['dev', 'prod']),
   target_id: z.string().nullable(),
   ticket_key: z.string().nullable(),
-  phase: z.enum(['triage', 'execution']).nullable(),
   tool_name: z.literal('db_read')
 });
 
@@ -42,7 +42,6 @@ const diagnosticSummarySchema = z.object({
   target_id: z.string().nullable(),
   database_target: z.enum(['dev', 'prod']),
   ticket_key: z.string().nullable(),
-  phase: z.enum(['triage', 'execution']).nullable(),
   row_count: z.number().int().nonnegative(),
   total_rows_before_limits: z.number().int().nonnegative(),
   truncated: z.boolean(),
@@ -114,6 +113,7 @@ export function registerFixedTools(server, handlers) {
         environment: z.string(),
         db_kind: z.literal("sqlserver"),
         status: z.string(),
+        runtime_status: z.string().nullable(),
         read_enabled: z.boolean(),
         write_enabled: z.boolean(),
         anonymization_enabled: z.boolean(),
@@ -227,7 +227,6 @@ export function registerFixedTools(server, handlers) {
           .optional()
           .describe('Optional explicit target_id override. When provided it must be active and belong to the requested database_target environment.'),
         ticket_key: z.string().min(1).optional().describe('Optional ticket or trace identifier for the diagnostic request.'),
-        phase: z.enum(['triage', 'execution']).optional().describe('Optional diagnostic phase marker.'),
         query: z.string().min(1).describe('SQL text passed to db_read after target resolution.'),
         parameters: z
           .record(
