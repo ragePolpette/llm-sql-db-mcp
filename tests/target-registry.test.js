@@ -213,4 +213,39 @@ test("loadTargetRegistry accepts dashboard runtime export aliases for llm provid
   assert.equal(target.llm_provider, "lmstudio");
   assert.equal(target.llm_model, "google/gemma-3-4b");
   assert.equal(target.anonymization_mode, "hybrid");
+  assert.equal(target.state.runtime_status, "ready");
+});
+
+test("loadTargetRegistry preserves optional runtime state exported by the dashboard", async () => {
+  const filePath = writeTempTargetsFile({
+    targets: [
+      {
+        target_id: "dev-main",
+        display_name: "Dev Main",
+        environment: "dev",
+        db_kind: "sqlserver",
+        status: "active",
+        connection_env_var: "DB_DEV_MAIN_CONNECTION_STRING",
+        read_enabled: true,
+        write_enabled: true,
+        anonymization_enabled: false,
+        anonymization_mode: "off",
+        llm_provider: "none",
+        llm_model: "",
+        max_rows: 100,
+        max_result_bytes: 1024,
+        allowed_tools: ["db_target_info", "db_policy_info", "db_read", "db_write"],
+        state: {
+          runtime_status: "vault_locked",
+          last_synced_at: "2026-04-22T10:00:00+02:00",
+          last_error: "Vault bloccato"
+        }
+      }
+    ]
+  });
+
+  const registry = await loadTargetRegistry(filePath);
+  const target = registry.get("dev-main");
+  assert.equal(target.state.runtime_status, "vault_locked");
+  assert.equal(target.state.last_error, "Vault bloccato");
 });

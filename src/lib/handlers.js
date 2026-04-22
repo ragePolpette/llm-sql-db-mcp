@@ -152,6 +152,23 @@ function getConnectionString(target, env) {
   return connectionString;
 }
 
+function getTargetRuntimeStatus(target) {
+  return String(target?.state?.runtime_status || "").trim().toLowerCase();
+}
+
+function getTargetRuntimeBlocker(target) {
+  const runtimeStatus = getTargetRuntimeStatus(target);
+  if (!runtimeStatus || runtimeStatus === "ready") {
+    return null;
+  }
+
+  const lastError = typeof target?.state?.last_error === "string" && target.state.last_error.trim()
+    ? target.state.last_error.trim()
+    : null;
+  const statusDetail = lastError ? `${runtimeStatus}: ${lastError}` : runtimeStatus;
+  return `Target "${target.target_id}" is not runtime-ready (${statusDetail}). Sync the dashboard runtime and restart/start the service before querying this target.`;
+}
+
 export function createHandlers({
   targetRegistry,
   env = process.env,
@@ -267,6 +284,11 @@ export function createHandlers({
       }
 
       try {
+        const runtimeBlocker = getTargetRuntimeBlocker(target);
+        if (runtimeBlocker) {
+          throw new Error(runtimeBlocker);
+        }
+
         const connectionString = getConnectionString(target, env);
         const effectiveMaxRows = resolveEffectiveMaxRows(requestedMaxRows, target.max_rows);
         logDbEvent?.("query_in", {
@@ -276,6 +298,11 @@ export function createHandlers({
           parameters,
           maxRows: effectiveMaxRows
         });
+        logDbEvent?.("db_driver_start", {
+          tool: "db_read",
+          target_id: target.target_id,
+          runtime_status: getTargetRuntimeStatus(target) || null
+        });
         const result = await executeSqlRead({
           connectionString,
           sqlText: normalizedSql,
@@ -284,17 +311,41 @@ export function createHandlers({
           maxResultBytes: target.max_result_bytes,
           driverConfig: sqlDriverConfig
         });
+        logDbEvent?.("db_driver_done", {
+          tool: "db_read",
+          target_id: target.target_id,
+          rowCount: result.row_count,
+          truncated: result.truncated,
+          durationMs: result.duration_ms
+        });
 
         const finalResult = policy.anonymization_required
-          ? await anonymizeQueryResult({
-              target,
-              queryResult: {
-                ...result,
-                sql_text: normalizedSql
-              },
-              providerConfig,
-              fetchImpl
-            })
+          ? await (async () => {
+              logDbEvent?.("anonymizer_start", {
+                tool: "db_read",
+                target_id: target.target_id,
+                provider: target.llm_provider,
+                mode: target.anonymization_mode
+              });
+              const anonymized = await anonymizeQueryResult({
+                target,
+                queryResult: {
+                  ...result,
+                  sql_text: normalizedSql
+                },
+                providerConfig,
+                fetchImpl
+              });
+              logDbEvent?.("anonymizer_done", {
+                tool: "db_read",
+                target_id: target.target_id,
+                provider: anonymized.anonymization_provider,
+                mode: anonymized.anonymization_mode,
+                rowCount: anonymized.row_count,
+                truncated: anonymized.truncated
+              });
+              return anonymized;
+            })()
           : {
               ...result,
               sql_text: normalizedSql,
@@ -328,6 +379,11 @@ export function createHandlers({
           ...finalResult
         });
       } catch (error) {
+        logDbEvent?.("query_failed", {
+          tool: "db_read",
+          target_id: target.target_id,
+          error: error.message
+        });
         return createErrorResult(error.message, {
           code: "db_read_failed",
           target_id: targetId,
@@ -370,12 +426,22 @@ export function createHandlers({
       }
 
       try {
+        const runtimeBlocker = getTargetRuntimeBlocker(target);
+        if (runtimeBlocker) {
+          throw new Error(runtimeBlocker);
+        }
+
         const connectionString = getConnectionString(target, env);
         logDbEvent?.("query_in", {
           tool: "db_write",
           target_id: target.target_id,
           sql: normalizedSql,
           parameters
+        });
+        logDbEvent?.("db_driver_start", {
+          tool: "db_write",
+          target_id: target.target_id,
+          runtime_status: getTargetRuntimeStatus(target) || null
         });
 
         const result = await executeSqlWrite({
@@ -384,6 +450,14 @@ export function createHandlers({
           parameters,
           maxResultBytes: target.max_result_bytes,
           driverConfig: sqlDriverConfig
+        });
+        logDbEvent?.("db_driver_done", {
+          tool: "db_write",
+          target_id: target.target_id,
+          rowCount: result.row_count,
+          rowsAffected: result.rows_affected,
+          truncated: result.truncated,
+          durationMs: result.duration_ms
         });
 
         logDbEvent?.("query_out", {
@@ -407,6 +481,11 @@ export function createHandlers({
           ...result
         });
       } catch (error) {
+        logDbEvent?.("query_failed", {
+          tool: "db_write",
+          target_id: target.target_id,
+          error: error.message
+        });
         return createErrorResult(error.message, {
           code: "db_write_failed",
           target_id: targetId,
