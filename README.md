@@ -208,8 +208,6 @@ This repository is in active development and should be treated as the current ca
 ## Documentation
 
 - [docs/README.md](docs/README.md)
-- [docs/PRODUCT_ROADMAP_CHECKLIST.md](docs/PRODUCT_ROADMAP_CHECKLIST.md)
-- [docs/RUNTIME_INTEGRATION_NOTES.md](docs/RUNTIME_INTEGRATION_NOTES.md)
 - [docs/VERSIONING_POLICY.md](docs/VERSIONING_POLICY.md)
 - [CONTRIBUTING.md](CONTRIBUTING.md)
 - [CHANGELOG.md](CHANGELOG.md)
