@@ -25,7 +25,7 @@ const targetSchema = z
     llm_provider: z.enum(allowedProviders),
     llm_model: z.string(),
     max_rows: z.number().int().positive(),
-    max_result_bytes: z.number().int().positive(),
+    max_result_bytes: z.number().int().positive().nullable(),
     allowed_tools: z.array(z.string().min(1)).default([]),
     state: targetStateSchema
   })
@@ -171,17 +171,17 @@ export class TargetRegistry {
 
   constructor(targets) {
     ensureUniqueTargetIds(targets);
-    this.#targets = targets.map(target => ({ ...target }));
+    this.#targets = structuredClone(targets);
     this.#targetMap = new Map(this.#targets.map(target => [target.target_id, target]));
   }
 
   list() {
-    return this.#targets.map(target => ({ ...target }));
+    return structuredClone(this.#targets);
   }
 
   get(targetId) {
     const target = this.#targetMap.get(targetId);
-    return target ? { ...target } : undefined;
+    return target ? structuredClone(target) : undefined;
   }
 
   require(targetId) {
@@ -213,6 +213,16 @@ export async function loadTargetRegistry(targetsFilePath, { env = process.env } 
     throw new Error(`targets.json is not valid JSON: ${error.message}`);
   }
 
+  // Legacy environment override names collapse punctuation/case. Reject an
+  // ambiguous override instead of silently applying it to multiple targets.
+  const prefixes = new Set();
+  for (const target of Array.isArray(parsedJson?.targets) ? parsedJson.targets : []) {
+    const prefix = normalizeTargetEnvPrefix(target.target_id);
+    if (prefixes.has(prefix) && Object.keys(env).some(key => key.startsWith(`${prefix}_`) && env[key] !== "" && env[key] !== undefined)) {
+      throw new Error(`Ambiguous target environment override prefix: ${prefix}`);
+    }
+    prefixes.add(prefix);
+  }
   const rawTargets = Array.isArray(parsedJson?.targets)
     ? parsedJson.targets.map(target => applyTargetEnvOverrides(normalizeRuntimeTarget(target), env))
     : parsedJson?.targets;

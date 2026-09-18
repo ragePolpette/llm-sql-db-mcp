@@ -60,11 +60,7 @@ function buildBoundedRows(rows, maxResultBytes) {
     const rowBytes = Buffer.byteLength(rowJson, "utf8");
     const separatorBytes = acceptedRows.length === 0 ? 0 : 1;
 
-    if (acceptedRows.length > 0 && resultBytes + separatorBytes + rowBytes > maxResultBytes) {
-      break;
-    }
-
-    if (acceptedRows.length === 0 && rowBytes > maxResultBytes) {
+    if (maxResultBytes !== null && resultBytes + separatorBytes + rowBytes > maxResultBytes) {
       break;
     }
 
@@ -79,12 +75,17 @@ function buildBoundedRows(rows, maxResultBytes) {
 }
 
 export function buildSqlServerConnectionConfig(connectionString, driverConfig = {}) {
+  // `mssql` accepts a SqlClient connection string only when it is passed to
+  // ConnectionPool directly. Supplying it as `connectionString` in a config
+  // object leaves the required `server` setting unset.
+  const parsedConnection = new sql.ConnectionPool(connectionString).config;
   const pool = driverConfig.pool ?? {};
   return {
-    connectionString,
+    ...parsedConnection,
     connectionTimeout: driverConfig.connectionTimeoutMs,
     requestTimeout: driverConfig.requestTimeoutMs,
     pool: {
+      ...parsedConnection.pool,
       max: pool.max,
       min: pool.min,
       idleTimeoutMillis: pool.idleTimeoutMs
@@ -192,6 +193,7 @@ export async function closeSqlServerPools() {
 }
 
 export const __sqlServerTestUtils = {
+  buildBoundedRows,
   buildSqlServerConnectionConfig,
   getPoolCacheSize() {
     return poolCache.size;

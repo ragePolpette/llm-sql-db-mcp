@@ -20,7 +20,7 @@ const targetInfoSchema = targetSummarySchema.extend({
   anonymization_mode: z.string(),
   effective_limits: z.object({
     max_rows: z.number().int().positive(),
-    max_result_bytes: z.number().int().positive()
+    max_result_bytes: z.number().int().positive().nullable()
   })
 });
 
@@ -123,7 +123,7 @@ export function registerFixedTools(server, handlers) {
         anonymization_mode: z.string(),
         effective_limits: z.object({
           max_rows: z.number().int().positive(),
-          max_result_bytes: z.number().int().positive()
+          max_result_bytes: z.number().int().positive().nullable()
         })
       },
       annotations: {
@@ -201,7 +201,7 @@ export function registerFixedTools(server, handlers) {
         row_count: z.number().int().nonnegative(),
         total_rows_before_limits: z.number().int().nonnegative(),
         max_rows_applied: z.number().int().positive(),
-        max_result_bytes_applied: z.number().int().positive(),
+        max_result_bytes_applied: z.number().int().positive().nullable(),
         result_bytes: z.number().int().nonnegative(),
         truncated: z.boolean(),
         duration_ms: z.number().int().nonnegative()
@@ -274,7 +274,7 @@ export function registerFixedTools(server, handlers) {
         rows: z.array(z.record(z.string(), z.unknown())),
         row_count: z.number().int().nonnegative(),
         rows_affected: z.number().int().nonnegative(),
-        max_result_bytes_applied: z.number().int().positive(),
+        max_result_bytes_applied: z.number().int().positive().nullable(),
         result_bytes: z.number().int().nonnegative(),
         truncated: z.boolean(),
         duration_ms: z.number().int().nonnegative()

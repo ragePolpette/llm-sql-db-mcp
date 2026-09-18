@@ -13,15 +13,14 @@ test("buildSqlServerConnectionConfig maps runtime config to mssql pool settings"
     }
   });
 
-  assert.deepEqual(config, {
-    connectionString: "Server=.;Database=App;",
-    connectionTimeout: 12000,
-    requestTimeout: 24000,
-    pool: {
-      max: 12,
-      min: 1,
-      idleTimeoutMillis: 45000
-    }
+  assert.equal(config.server, "localhost");
+  assert.equal(config.database, "App");
+  assert.equal(config.connectionTimeout, 12000);
+  assert.equal(config.requestTimeout, 24000);
+  assert.deepEqual(config.pool, {
+    max: 12,
+    min: 1,
+    idleTimeoutMillis: 45000
   });
 });
 

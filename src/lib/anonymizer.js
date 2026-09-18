@@ -18,6 +18,7 @@ function computeRowsByteLength(rows) {
 }
 
 function clampRowsToByteLimit(rows, maxResultBytes) {
+  if (maxResultBytes === null) return rows;
   const acceptedRows = [];
 
   for (const row of rows) {
@@ -103,6 +104,7 @@ export {
 };
 
 export const __anonymizerTestUtils = {
+  clampRowsToByteLimit,
   normalizeMode,
   resolveFailOpen
 };
