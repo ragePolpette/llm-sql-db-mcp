@@ -55,6 +55,7 @@ function buildAnonymizerConfig(target, providerConfig) {
     mode: normalizeMode(target.anonymization_mode),
     fieldIdentification: providerConfig.fieldIdentification,
     hashSalt: providerConfig.hashSalt,
+    minConfidence: providerConfig.minConfidence,
     failOpen: resolveFailOpen(target, providerConfig),
     timeoutMs: providerConfig.timeoutMs,
     model: target.llm_model,
@@ -77,9 +78,14 @@ export async function anonymizeQueryResult({
     };
   }
 
+  // Column origins are an internal classification input: never forward schema details to the client.
+  const { column_origins: columnOrigins, ...publicQueryResult } = queryResult;
+  queryResult = publicQueryResult;
+
   const anonymizerConfig = buildAnonymizerConfig(target, providerConfig);
   const maskedRows = await anonymizeRows(queryResult.rows, anonymizerConfig, {
     sqlText: queryResult.sql_text,
+    columnOrigins,
     fetchImpl
   });
   const boundedRows = clampRowsToByteLimit(maskedRows, queryResult.max_result_bytes_applied);

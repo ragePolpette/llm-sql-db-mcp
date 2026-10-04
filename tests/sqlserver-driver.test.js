@@ -59,3 +59,12 @@ test("closeSqlServerPools tolerates pool close failures and still clears the cac
 
   assert.equal(__sqlServerTestUtils.getPoolCacheSize(), 0);
 });
+
+test("describeParameterType maps JS values to T-SQL types and rejects unsupported ones", () => {
+  assert.equal(__sqlServerTestUtils.describeParameterType("a"), "nvarchar(max)");
+  assert.equal(__sqlServerTestUtils.describeParameterType(3), "bigint");
+  assert.equal(__sqlServerTestUtils.describeParameterType(3.5), "float");
+  assert.equal(__sqlServerTestUtils.describeParameterType(true), "bit");
+  assert.equal(__sqlServerTestUtils.describeParameterType(new Date()), "datetime2");
+  assert.equal(__sqlServerTestUtils.describeParameterType({}), null);
+});

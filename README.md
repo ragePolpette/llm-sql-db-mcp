@@ -164,6 +164,7 @@ Key runtime settings include:
 - `ANON_FIELD_IDENTIFICATION`
 - `ANON_FAIL_OPEN`
 - `ANON_TIMEOUT_MS`
+- `ANON_MIN_CONFIDENCE` (0-1, default 0.8: a provider `none` verdict below this confidence is ignored and the column is masked)
 
 Target overrides can be supplied through `TARGET_<TARGET_ID>_...` environment variables for per-target read/write/anonymization behavior.
 

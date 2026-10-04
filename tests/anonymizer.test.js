@@ -79,3 +79,20 @@ test("anonymizeQueryResult may fail open for non-prod targets when ANON_FAIL_OPE
   assert.equal(result.anonymization_applied, true);
   assert.match(result.rows[0].Email, /^user_[a-f0-9]{10}@example\.invalid$/);
 });
+
+test("anonymizeQueryResult uses column origins but never returns them to the client", async () => {
+  const { anonymizeQueryResult } = await import("../src/lib/anonymizer.js");
+  const result = await anonymizeQueryResult({
+    target: { anonymization_enabled: true, anonymization_mode: "deterministic", llm_provider: "none", environment: "prod" },
+    queryResult: {
+      rows: [{ tipo: "Rossi" }],
+      sql_text: "SELECT cognome AS tipo FROM dbo.u",
+      max_result_bytes_applied: null,
+      truncated: false,
+      column_origins: { tipo: { table: "u", column: "cognome" } }
+    },
+    providerConfig: { hashSalt: "salt-salt-salt", failOpen: false, timeoutMs: 1000, fieldIdentification: "heuristic" }
+  });
+  assert.match(result.rows[0].tipo, /^NAME_/);
+  assert.equal("column_origins" in result, false);
+});

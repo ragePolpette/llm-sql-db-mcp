@@ -115,3 +115,16 @@ test("loadRuntimeConfig rejects invalid SQL timeout and pool settings", () => {
     /DB_POOL_MAX must be greater than or equal to DB_POOL_MIN/
   );
 });
+
+test("ANON_MIN_CONFIDENCE defaults to 0.8 and rejects out-of-range values", () => {
+  const cwd = createTempDir();
+  assert.equal(loadRuntimeConfig({ cwd, env: {} }).providers.minConfidence, 0.8);
+  assert.equal(
+    loadRuntimeConfig({ cwd, env: { ANON_MIN_CONFIDENCE: "0.5" } }).providers.minConfidence,
+    0.5
+  );
+  assert.throws(
+    () => loadRuntimeConfig({ cwd, env: { ANON_MIN_CONFIDENCE: "2" } }),
+    /ANON_MIN_CONFIDENCE/
+  );
+});

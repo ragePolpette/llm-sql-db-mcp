@@ -182,3 +182,129 @@ test("anonymizeRows caches field decisions per SQL source scope", async () => {
   assert.equal(cacheKeys.length, 1);
   assert.match(cacheKeys[0], /dbo\.fat_clienti_dettaglio\|riferimento_amministrazione/);
 });
+
+const BASE_CFG = {
+  provider: "none",
+  mode: "deterministic",
+  fieldIdentification: "heuristic",
+  hashSalt: "Super-Secret-Hash-Salt-123!",
+  failOpen: false,
+  timeoutMs: 5000,
+  model: "",
+  baseUrl: ""
+};
+
+function llmCfg() {
+  return { ...BASE_CFG, provider: "ollama", mode: "hybrid", fieldIdentification: "hybrid", model: "m", baseUrl: "http://127.0.0.1:11434" };
+}
+
+function llmFetch(fields) {
+  return async () => ({
+    ok: true,
+    async json() {
+      return { message: { content: JSON.stringify({ fields }) } };
+    }
+  });
+}
+
+test("a provider none verdict cannot downgrade a strong heuristic hit", async () => {
+  __anonymizationCoreTestUtils.resetKindCache();
+  const [row] = await anonymizeRows(
+    [{ email: "mario@x.it", cognome: "Rossi" }],
+    llmCfg(),
+    { sqlText: "SELECT email, cognome FROM dbo.u", fetchImpl: llmFetch({ email: "none", cognome: "none" }) }
+  );
+  assert.match(row.email, /@example\.invalid$/);
+  assert.match(row.cognome, /^NAME_/);
+});
+
+test("a low-confidence none is ignored, a high-confidence none is honoured", async () => {
+  __anonymizationCoreTestUtils.resetKindCache();
+  const [row] = await anonymizeRows(
+    [{ Sicuro: "abc", Dubbio: "Mario Rossi" }],
+    llmCfg(),
+    {
+      sqlText: "SELECT Sicuro, Dubbio FROM dbo.t",
+      fetchImpl: llmFetch({
+        Sicuro: { kind: "none", confidence: 0.99 },
+        Dubbio: { kind: "none", confidence: 0.3 }
+      })
+    }
+  );
+  assert.equal(row.Sicuro, "abc");
+  assert.match(row.Dubbio, /^TEXT_/);
+});
+
+test("aliasing a sensitive column to a technical name does not bypass masking", async () => {
+  const sqlText = "SELECT cognome AS tipo, nome AS stato, email AS id, COUNT(*) AS total FROM dbo.u";
+  const rows = [{ tipo: "Rossi", stato: "Mario", id: "mario@x.it", total: 7 }];
+
+  const [legacy] = await anonymizeRows(rows, BASE_CFG, { sqlText });
+  assert.equal(legacy.tipo, "Rossi", "without origins the legacy name-based exemption still applies");
+
+  const [row] = await anonymizeRows(rows, BASE_CFG, {
+    sqlText,
+    columnOrigins: {
+      tipo: { table: "u", column: "cognome" },
+      stato: { table: "u", column: "nome" },
+      id: { table: "u", column: "email" },
+      total: null
+    }
+  });
+  assert.match(row.tipo, /^NAME_/);
+  assert.match(row.stato, /^NAME_/);
+  assert.match(row.id, /@example\.invalid$/);
+  assert.equal(row.total, 7);
+});
+
+test("computed string columns lose the technical-name exemption", async () => {
+  const [row] = await anonymizeRows(
+    [{ tipo: "Rossi", id: 5 }],
+    BASE_CFG,
+    { sqlText: "SELECT LEFT(cognome, 5) AS tipo, id FROM dbo.u", columnOrigins: { tipo: null, id: { table: "u", column: "id" } } }
+  );
+  assert.match(row.tipo, /^TEXT_/);
+  assert.equal(row.id, 5);
+});
+
+test("UNION queries treat every column as computed", async () => {
+  const [row] = await anonymizeRows(
+    [{ tipo: "Rossi" }],
+    BASE_CFG,
+    { sqlText: "SELECT tipo FROM a UNION SELECT cognome FROM b", columnOrigins: { tipo: { table: "a", column: "tipo" } } }
+  );
+  assert.match(row.tipo, /^TEXT_/);
+});
+
+test("a provider none verdict is ignored for computed columns", async () => {
+  __anonymizationCoreTestUtils.resetKindCache();
+  const [row] = await anonymizeRows(
+    [{ tipo: "Rossi" }],
+    llmCfg(),
+    {
+      sqlText: "SELECT cognome AS tipo FROM dbo.u",
+      columnOrigins: { tipo: null },
+      fetchImpl: llmFetch({ tipo: "none" })
+    }
+  );
+  assert.match(row.tipo, /^TEXT_/);
+});
+
+test("emails and valid IBANs are masked even in technical columns", async () => {
+  const [row] = await anonymizeRows(
+    [{ id: "mario@x.it", stato: "IT60X0542811101000000123456", tipo: "IT60X0542811101000000123457" }],
+    BASE_CFG
+  );
+  assert.match(row.id, /@example\.invalid$/);
+  assert.match(row.stato, /^IBAN_/);
+  assert.equal(row.tipo, "IT60X0542811101000000123457", "invalid checksum is not an IBAN");
+});
+
+test("birth dates and IBAN columns are masked by name", async () => {
+  const [row] = await anonymizeRows(
+    [{ data_nascita: "1980-01-01T00:00:00.000Z", Iban: "x" }],
+    BASE_CFG
+  );
+  assert.match(row.data_nascita, /^DATE_/);
+  assert.match(row.Iban, /^IBAN_/);
+});
