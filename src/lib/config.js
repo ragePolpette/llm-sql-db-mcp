@@ -131,6 +131,13 @@ export function loadRuntimeConfig({ cwd = process.cwd(), env = process.env } = {
     throw new Error("ANON_TIMEOUT_MS must be greater than zero.");
   }
 
+  const anonymizerMinConfidence = env.ANON_MIN_CONFIDENCE === undefined || env.ANON_MIN_CONFIDENCE === ""
+    ? 0.8
+    : Number(env.ANON_MIN_CONFIDENCE);
+  if (!Number.isFinite(anonymizerMinConfidence) || anonymizerMinConfidence < 0 || anonymizerMinConfidence > 1) {
+    throw new Error("ANON_MIN_CONFIDENCE must be a number between 0 and 1.");
+  }
+
   const dbConnectionTimeoutMs = parseInteger(
     env.DB_CONNECTION_TIMEOUT_MS,
     DEFAULT_DB_CONNECTION_TIMEOUT_MS,
@@ -208,7 +215,8 @@ export function loadRuntimeConfig({ cwd = process.cwd(), env = process.env } = {
       ),
       hashSalt: env.ANON_HASH_SALT ?? "",
       failOpen: parseBoolean(env.ANON_FAIL_OPEN, false),
-      timeoutMs: anonymizerTimeoutMs
+      timeoutMs: anonymizerTimeoutMs,
+      minConfidence: anonymizerMinConfidence
     }
   };
 }

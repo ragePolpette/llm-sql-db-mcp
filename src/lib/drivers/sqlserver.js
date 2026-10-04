@@ -105,12 +105,56 @@ async function getPool(connectionString, driverConfig = {}) {
   return connectedPool;
 }
 
+function describeParameterType(value) {
+  if (typeof value === "string") return "nvarchar(max)";
+  if (typeof value === "boolean") return "bit";
+  if (typeof value === "bigint") return "bigint";
+  if (typeof value === "number") return Number.isInteger(value) ? "bigint" : "float";
+  if (value instanceof Date) return "datetime2";
+  return null;
+}
+
+// Resolves each output column to its source table/column (SQL Server browse metadata), so that
+// anonymization classifies the real column rather than the caller-chosen alias. Computed columns map
+// to null. Returns null when the metadata cannot be obtained; callers must then treat origins as unknown.
+async function describeColumnOrigins(pool, sqlText, parameters) {
+  try {
+    const declarations = [];
+    for (const [name, value] of Object.entries(parameters)) {
+      const type = describeParameterType(value);
+      if (!type) return null;
+      declarations.push(`@${name} ${type}`);
+    }
+
+    const request = pool.request();
+    request.input("tsql", sql.NVarChar(sql.MAX), sqlText);
+    request.input("params", sql.NVarChar(sql.MAX), declarations.length > 0 ? declarations.join(", ") : null);
+    const described = await request.query(
+      "SELECT name, source_table, source_column FROM sys.dm_exec_describe_first_result_set(@tsql, @params, 1) WHERE is_hidden = 0"
+    );
+
+    const origins = {};
+    for (const row of described.recordset ?? []) {
+      if (!row.name) continue;
+      // A repeated output name is ambiguous: treat it as computed.
+      origins[row.name] =
+        Object.prototype.hasOwnProperty.call(origins, row.name) || !row.source_column
+          ? null
+          : { table: row.source_table ?? null, column: row.source_column };
+    }
+    return origins;
+  } catch {
+    return null;
+  }
+}
+
 export async function executeSqlServerRead({
   connectionString,
   sqlText,
   parameters = {},
   maxRows,
   maxResultBytes,
+  describeOrigins = false,
   driverConfig = {}
 }) {
   const pool = await getPool(connectionString, driverConfig);
@@ -124,6 +168,8 @@ export async function executeSqlServerRead({
     request.input(name, value);
   }
 
+  const columnOrigins = describeOrigins ? await describeColumnOrigins(pool, sqlText, parameters) : undefined;
+
   const startedAt = Date.now();
   const queryResult = await request.query(sqlText);
   const recordset = queryResult.recordset ?? [];
@@ -134,6 +180,7 @@ export async function executeSqlServerRead({
 
   return {
     columns: normalizeColumns(recordset),
+    ...(columnOrigins ? { column_origins: columnOrigins } : {}),
     rows: boundedRows.rows,
     row_count: boundedRows.rows.length,
     total_rows_before_limits: normalizedRows.length,
@@ -195,6 +242,7 @@ export async function closeSqlServerPools() {
 export const __sqlServerTestUtils = {
   buildBoundedRows,
   buildSqlServerConnectionConfig,
+  describeParameterType,
   getPoolCacheSize() {
     return poolCache.size;
   },

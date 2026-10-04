@@ -312,6 +312,7 @@ export function createHandlers({
           parameters,
           maxRows: effectiveMaxRows,
           maxResultBytes: target.max_result_bytes,
+          describeOrigins: policy.anonymization_required,
           driverConfig: sqlDriverConfig
         });
         logDbEvent?.("db_driver_done", {
