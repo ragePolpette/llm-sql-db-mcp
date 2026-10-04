@@ -456,38 +456,61 @@ export function parseProviderJson(text) {
   }
 }
 
-function resolveKindForKey(key, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE, derived = false) {
+const PII_SCAN_PHONE_REGEX = /(?:\+|\b00)\d[\d\s().-]{7,}\d|\b3\d{2}[\s.-]?\d{6,7}\b/;
+
+// Deterministic check over every value of a column in the current result: a column that the provider
+// called "none" but that visibly contains e-mails, IBANs or phone numbers is not "none".
+function columnHasPiiPatterns(profile) {
+  if (!profile) return false;
+  if (profile.piiPatterns !== undefined) return profile.piiPatterns;
+  profile.piiPatterns = profile.values.some(value => {
+    if (new RegExp(EMAIL_REGEX.source, "i").test(value)) return true;
+    if (PII_SCAN_PHONE_REGEX.test(value)) return true;
+    const ibans = value.match(IBAN_CANDIDATE_REGEX) || [];
+    return ibans.some(isValidIban);
+  });
+  return profile.piiPatterns;
+}
+
+function resolveKindForKey(key, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE, derived = false, profile = null, trust = "corroborated") {
   const normalized = normalizeKey(key);
-  if (!normalized) return null;
+  if (!normalized) return { kind: null, reason: "no-key" };
 
   const heuristic = inferKindHeuristic(key);
+  const heuristicResult = heuristic ? { kind: heuristic, reason: `heuristic:${heuristic}` } : { kind: null, reason: "undecided" };
   const decision = fieldKindMap?.has(normalized)
     ? fieldKindMap.get(normalized)
     : getCachedKindDecision(normalized, cacheScope);
 
-  if (decision) {
-    if (decision === NONE_KIND) {
-      // A "none" verdict is never trusted for computed columns (the alias is caller-controlled)
-      // and never downgrades a strong heuristic hit.
-      if (derived) return heuristic;
-      if (heuristic && STRONG_KINDS.has(heuristic)) return heuristic;
-      return NONE_KIND;
-    }
-    return decision;
-  }
+  if (!decision) return heuristicResult;
+  if (decision !== NONE_KIND) return { kind: decision, reason: `provider:${decision}` };
 
-  return heuristic;
+  // A provider "none" verdict is only ever a claim of safety, never evidence of it:
+  if (derived) return { ...heuristicResult, reason: heuristic ? heuristicResult.reason : "provider-none-ignored:derived" };
+  if (heuristic && STRONG_KINDS.has(heuristic)) return heuristicResult;
+  if (trust === "strict") return { ...heuristicResult, reason: heuristic ? heuristicResult.reason : "provider-none-ignored:strict" };
+  if (columnHasPiiPatterns(profile)) {
+    return { ...heuristicResult, reason: heuristic ? heuristicResult.reason : "provider-none-rejected:pii-pattern" };
+  }
+  return { kind: NONE_KIND, reason: "provider-none" };
 }
 
-function resolveKindForValue(key, value, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE, columnProfiles = null, derived = false, profileKey = key) {
-  const kind = resolveKindForKey(key, fieldKindMap, cacheScope, derived);
-  if (kind) return kind;
+function resolveKindForValue(key, value, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE, columnProfiles = null, derived = false, profileKey = key, trust = "corroborated") {
+  const profile = columnProfiles?.get(normalizeKey(profileKey)) || null;
+  const resolved = resolveKindForKey(key, fieldKindMap, cacheScope, derived, profile, trust);
+  if (resolved.kind) return resolved;
   // Computed columns get no "technical name" exemption: `SELECT cognome AS tipo` must stay masked.
-  if (!derived && isTechnicalSafeColumn(key, value, columnProfiles, profileKey)) return NONE_KIND;
-  if (typeof value === "string" && value.trim()) {
-    return "text";
+  if (!derived && isTechnicalSafeColumn(key, value, columnProfiles, profileKey)) {
+    return { kind: NONE_KIND, reason: "safe:technical" };
   }
-  return null;
+  if (typeof value === "string" && value.trim()) {
+    // Keep the provider-verdict explanation when that is why the column ended up masked.
+    const reason = resolved.reason.startsWith("provider-none-")
+      ? `${resolved.reason}>fallback:text`
+      : derived ? "fallback:derived-text" : "fallback:unknown-text";
+    return { kind: "text", reason };
+  }
+  return { kind: null, reason: "kept:non-string" };
 }
 
 function replaceByKind(kind, key, value, cfg) {
@@ -572,7 +595,8 @@ function buildColumnResolver(columnOrigins, sqlText) {
   };
 }
 
-function deterministicFallback(rows, cfg, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE, columnProfiles = null, resolveColumn = key => ({ classKey: key, derived: false })) {
+function deterministicFallback(rows, cfg, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE, columnProfiles = null, resolveColumn = key => ({ classKey: key, derived: false }), report = null) {
+  const trust = cfg?.trust === "strict" ? "strict" : "corroborated";
   return rows.map(row => {
     if (!isObject(row)) return row;
 
@@ -582,22 +606,47 @@ function deterministicFallback(rows, cfg, fieldKindMap, cacheScope = GLOBAL_CACH
       if (value === null || value === undefined) continue;
 
       const { classKey, derived } = resolveColumn(key);
-      const kind = resolveKindForValue(classKey, value, fieldKindMap, cacheScope, columnProfiles, derived, key);
+      const { kind, reason } = resolveKindForValue(classKey, value, fieldKindMap, cacheScope, columnProfiles, derived, key, trust);
+      let masked = false;
+      let finalReason = reason;
       if (kind === NONE_KIND) {
-        out[key] = maskSensitiveValuePatterns(value, cfg);
-        continue;
-      }
-      if (kind) {
+        const floored = maskSensitiveValuePatterns(value, cfg);
+        masked = floored !== value;
+        if (masked) finalReason = `${reason}+floor:pattern`;
+        out[key] = floored;
+      } else if (kind) {
         out[key] = replaceByKind(kind, classKey, value, cfg);
-        continue;
-      }
-
-      if (typeof value === "string") {
+        masked = true;
+      } else if (typeof value === "string") {
         out[key] = maskInlineWithHashes(value, cfg);
+        masked = out[key] !== value;
       }
+      report?.record(key, classKey, derived, finalReason, masked);
     }
     return out;
   });
+}
+
+function createDecisionReport() {
+  const columns = new Map();
+  return {
+    record(column, classKey, derived, reason, masked) {
+      const entry = columns.get(column) ?? { column, source: classKey, derived, reasons: {}, masked_cells: 0, cells: 0 };
+      entry.cells += 1;
+      if (masked) entry.masked_cells += 1;
+      entry.reasons[reason] = (entry.reasons[reason] ?? 0) + 1;
+      columns.set(column, entry);
+    },
+    summarize() {
+      const byReason = {};
+      for (const entry of columns.values()) {
+        for (const [reason, count] of Object.entries(entry.reasons)) {
+          byReason[reason] = (byReason[reason] ?? 0) + count;
+        }
+      }
+      return { columns: [...columns.values()], by_reason: byReason };
+    }
+  };
 }
 
 function buildFieldProbePayload(rows, columnProfiles = null, resolveColumn = key => ({ classKey: key, derived: false })) {
@@ -785,7 +834,16 @@ export async function anonymizeRows(rows, cfg, options = {}) {
     }
   }
 
-  return deterministicFallback(rows, cfg, fieldKindMap, cacheScope, columnProfiles, resolveColumn);
+  const report = createDecisionReport();
+  const masked = deterministicFallback(rows, cfg, fieldKindMap, cacheScope, columnProfiles, resolveColumn, report);
+  if (typeof options?.onReport === "function") {
+    try {
+      options.onReport(report.summarize());
+    } catch {
+      // Reporting must never affect anonymization.
+    }
+  }
+  return masked;
 }
 
 export const __anonymizationCoreTestUtils = {

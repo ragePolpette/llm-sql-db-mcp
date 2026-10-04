@@ -249,3 +249,34 @@ test("loadTargetRegistry preserves optional runtime state exported by the dashbo
   assert.equal(target.state.runtime_status, "vault_locked");
   assert.equal(target.state.last_error, "Vault bloccato");
 });
+
+test("loadTargetRegistry defaults anonymization_trust to corroborated and honours the env override", async () => {
+  const filePath = writeTempTargetsFile({
+    targets: [
+      {
+        target_id: "prod-main",
+        display_name: "Prod Main",
+        environment: "prod",
+        db_kind: "sqlserver",
+        status: "active",
+        connection_env_var: "DB_PROD_MAIN_CONNECTION_STRING",
+        read_enabled: true,
+        write_enabled: false,
+        anonymization_enabled: true,
+        anonymization_mode: "hybrid",
+        llm_provider: "lmstudio",
+        llm_model: "google/gemma-3-4b",
+        max_rows: 100,
+        max_result_bytes: 1024,
+        allowed_tools: ["db_read"]
+      }
+    ]
+  });
+
+  assert.equal((await loadTargetRegistry(filePath, { env: {} })).get("prod-main").anonymization_trust, "corroborated");
+  const overridden = await loadTargetRegistry(filePath, { env: { TARGET_PROD_MAIN_ANONYMIZATION_TRUST: "strict" } });
+  assert.equal(overridden.get("prod-main").anonymization_trust, "strict");
+  await assert.rejects(
+    () => loadTargetRegistry(filePath, { env: { TARGET_PROD_MAIN_ANONYMIZATION_TRUST: "yolo" } })
+  );
+});

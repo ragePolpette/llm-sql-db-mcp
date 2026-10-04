@@ -18,6 +18,7 @@ const targetSummarySchema = z.object({
 const targetInfoSchema = targetSummarySchema.extend({
   allowed_tools: z.array(z.string()),
   anonymization_mode: z.string(),
+  anonymization_trust: z.string().optional(),
   effective_limits: z.object({
     max_rows: z.number().int().positive(),
     max_result_bytes: z.number().int().positive().nullable()
@@ -121,6 +122,7 @@ export function registerFixedTools(server, handlers) {
         llm_model: z.string(),
         allowed_tools: z.array(z.string()),
         anonymization_mode: z.string(),
+        anonymization_trust: z.string().optional(),
         effective_limits: z.object({
           max_rows: z.number().int().positive(),
           max_result_bytes: z.number().int().positive().nullable()

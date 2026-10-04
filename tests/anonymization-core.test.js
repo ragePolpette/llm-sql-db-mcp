@@ -308,3 +308,65 @@ test("birth dates and IBAN columns are masked by name", async () => {
   assert.match(row.data_nascita, /^DATE_/);
   assert.match(row.Iban, /^IBAN_/);
 });
+
+test("onReport explains every decision per column and never contains values", async () => {
+  __anonymizationCoreTestUtils.resetKindCache();
+  let report;
+  await anonymizeRows(
+    [{ email: "mario@x.it", Estero: "0", tipo: "Rossi", ignoto: "abc", importo: 12.5 }],
+    BASE_CFG,
+    { sqlText: "SELECT * FROM dbo.t", onReport: r => { report = r; } }
+  );
+  const reasons = Object.fromEntries(report.columns.map(c => [c.column, Object.keys(c.reasons)[0]]));
+  assert.equal(reasons.email, "heuristic:email");
+  assert.equal(reasons.Estero, "safe:technical");
+  assert.equal(reasons.ignoto, "fallback:unknown-text");
+  assert.equal(reasons.importo, "kept:non-string");
+  assert.ok(report.by_reason["heuristic:email"] >= 1);
+  assert.equal(JSON.stringify(report).includes("mario@x.it"), false);
+  assert.equal(JSON.stringify(report).includes("Rossi"), false);
+});
+
+test("a throwing onReport callback does not break anonymization", async () => {
+  const [row] = await anonymizeRows([{ email: "a@b.it" }], BASE_CFG, { onReport() { throw new Error("boom"); } });
+  assert.match(row.email, /@example\.invalid$/);
+});
+
+test("trust=strict ignores a provider none verdict on unknown columns", async () => {
+  __anonymizationCoreTestUtils.resetKindCache();
+  const [row] = await anonymizeRows(
+    [{ Descrizione: "Cliente principale" }],
+    { ...llmCfg(), trust: "strict" },
+    { sqlText: "SELECT Descrizione FROM dbo.t", fetchImpl: llmFetch({ Descrizione: "none" }) }
+  );
+  assert.match(row.Descrizione, /^TEXT_/);
+});
+
+test("trust=corroborated rejects a provider none verdict when the column contains phone numbers", async () => {
+  __anonymizationCoreTestUtils.resetKindCache();
+  let report;
+  const [clean, dirty] = await anonymizeRows(
+    [{ Contatto: "ufficio acquisti" }, { Contatto: "chiamare +39 333 1234567" }],
+    llmCfg(),
+    {
+      sqlText: "SELECT Contatto FROM dbo.t",
+      fetchImpl: llmFetch({ Contatto: "none" }),
+      onReport: r => { report = r; }
+    }
+  );
+  assert.match(clean.Contatto, /^TEXT_/);
+  assert.match(dirty.Contatto, /^TEXT_/);
+  assert.ok(report.by_reason["provider-none-rejected:pii-pattern>fallback:text"] >= 1);
+});
+
+test("trust=corroborated still honours a clean confident none and says so in the report", async () => {
+  __anonymizationCoreTestUtils.resetKindCache();
+  let report;
+  const [row] = await anonymizeRows(
+    [{ Causale: "Fattura gennaio" }],
+    llmCfg(),
+    { sqlText: "SELECT Causale FROM dbo.t", fetchImpl: llmFetch({ Causale: "none" }), onReport: r => { report = r; } }
+  );
+  assert.equal(row.Causale, "Fattura gennaio");
+  assert.equal(report.by_reason["provider-none"], 1);
+});

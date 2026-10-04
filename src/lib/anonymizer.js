@@ -5,6 +5,8 @@ import {
   __anonymizationCoreTestUtils
 } from "./anonymization/core.js";
 
+const NON_PROD_ENVIRONMENTS = new Set(["dev", "test", "staging"]);
+
 function normalizeMode(mode) {
   const value = String(mode || "hybrid").trim().toLowerCase();
   if (value === "direct") {
@@ -38,8 +40,10 @@ function resolveFailOpen(target, providerConfig) {
     return false;
   }
 
+  // Fail-open is an explicit opt-in for known non-production environments; a missing or
+  // unrecognised environment label is treated as production.
   const environment = String(target?.environment || "").trim().toLowerCase();
-  return environment !== "prod";
+  return NON_PROD_ENVIRONMENTS.has(environment);
 }
 
 function buildAnonymizerConfig(target, providerConfig) {
@@ -56,6 +60,7 @@ function buildAnonymizerConfig(target, providerConfig) {
     fieldIdentification: providerConfig.fieldIdentification,
     hashSalt: providerConfig.hashSalt,
     minConfidence: providerConfig.minConfidence,
+    trust: target.anonymization_trust === "strict" ? "strict" : "corroborated",
     failOpen: resolveFailOpen(target, providerConfig),
     timeoutMs: providerConfig.timeoutMs,
     model: target.llm_model,
@@ -67,7 +72,8 @@ export async function anonymizeQueryResult({
   target,
   queryResult,
   providerConfig,
-  fetchImpl = globalThis.fetch
+  fetchImpl = globalThis.fetch,
+  onReport
 }) {
   if (!target.anonymization_enabled) {
     return {
@@ -86,6 +92,7 @@ export async function anonymizeQueryResult({
   const maskedRows = await anonymizeRows(queryResult.rows, anonymizerConfig, {
     sqlText: queryResult.sql_text,
     columnOrigins,
+    onReport,
     fetchImpl
   });
   const boundedRows = clampRowsToByteLimit(maskedRows, queryResult.max_result_bytes_applied);

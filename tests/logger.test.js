@@ -148,3 +148,27 @@ test("createLogger includes request-scoped ids when present", () => {
   assert.equal(entry.request_id, "req-123");
   assert.equal(entry.session_id, "session-456");
 });
+
+test("anonymizer_decisions logs aggregate reasons at info and per-column detail only at debug", () => {
+  const payload = {
+    tool: "db_read",
+    target_id: "prod-main",
+    by_reason: { "heuristic:email": 2 },
+    columns: [{ column: "email", reasons: { "heuristic:email": 2 } }],
+    rows: [{ email: "secret@x.it" }]
+  };
+
+  const infoOut = createWritableMemoryStream();
+  createLogger({ level: "info", stdout: infoOut }).dbEvent("anonymizer_decisions", payload);
+  const infoEntry = JSON.parse(infoOut.chunks[0]);
+  assert.equal(infoEntry.event, "db.anonymizer_decisions");
+  assert.deepEqual(infoEntry.payload.by_reason, { "heuristic:email": 2 });
+  assert.equal(infoEntry.payload.columns, undefined);
+  assert.equal(infoOut.chunks[0].includes("secret@x.it"), false);
+
+  const debugOut = createWritableMemoryStream();
+  createLogger({ level: "debug", stdout: debugOut }).dbEvent("anonymizer_decisions", payload);
+  const debugEntry = JSON.parse(debugOut.chunks[0]);
+  assert.equal(debugEntry.payload.columns.length, 1);
+  assert.equal(debugOut.chunks[0].includes("secret@x.it"), false);
+});

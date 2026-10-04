@@ -144,6 +144,15 @@ function redactDbPayload(event, payload, level) {
     };
   }
 
+  if (event === "anonymizer_decisions") {
+    return {
+      tool: payload.tool ?? null,
+      target_id: payload.target_id ?? null,
+      by_reason: payload.by_reason ?? {},
+      columns: level === "debug" ? payload.columns ?? [] : undefined
+    };
+  }
+
   if (["db_driver_start", "db_driver_done", "anonymizer_start", "anonymizer_done", "query_failed"].includes(event)) {
     return {
       tool: payload.tool ?? null,
@@ -228,7 +237,7 @@ export function createLogger({
       }
 
       if (normalizedLevel === "info") {
-        if (["query_out", "query_failed"].includes(event)) {
+        if (["query_out", "query_failed", "anonymizer_decisions"].includes(event)) {
           writeLine(stdout, buildEntry("info", `db.${event}`, sanitizedPayload));
         }
         return;

@@ -7,6 +7,9 @@ Il formato segue in modo leggero [Keep a Changelog](https://keepachangelog.com/e
 ## [Unreleased]
 
 ### Security
+- Anonymization (phase A): per-column decision reasons are logged as `db.anonymizer_decisions` (aggregate counts at `info`, per-column detail at `debug`, never values).
+- Anonymization: new per-target `anonymization_trust` (`corroborated` default, `strict`; env override `TARGET_<ID>_ANONYMIZATION_TRUST`). `strict` never accepts a provider `none` verdict on unknown columns; `corroborated` also rejects it when the column visibly contains e-mails, IBANs or phone numbers.
+- Anonymization: `ANON_FAIL_OPEN` now applies only to explicitly non-production environments (`dev`, `test`, `staging`); a missing or unknown `environment` is treated as production. Targets with anonymization disabled are unchanged (results pass through).
 - Anonymization: a provider `none` verdict can no longer downgrade a strong heuristic hit (email, phone, name, iban, date) and is ignored for computed columns.
 - Anonymization: on SQL Server the driver resolves each output column to its source column (`sys.dm_exec_describe_first_result_set`), so aliasing (`SELECT cognome AS tipo`) no longer bypasses masking. Computed columns and UNION queries lose the technical-name exemption; if origins cannot be resolved the previous name-based behaviour applies.
 - Anonymization: e-mail addresses and checksum-valid IBANs are masked in every string value, even in columns judged technical; birth-date and IBAN columns are masked by name.

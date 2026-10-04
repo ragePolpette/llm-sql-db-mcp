@@ -338,7 +338,14 @@ export function createHandlers({
                   sql_text: normalizedSql
                 },
                 providerConfig,
-                fetchImpl
+                fetchImpl,
+                onReport: report =>
+                  logDbEvent?.("anonymizer_decisions", {
+                    tool: "db_read",
+                    target_id: target.target_id,
+                    by_reason: report.by_reason,
+                    columns: report.columns
+                  })
               });
               logDbEvent?.("anonymizer_done", {
                 tool: "db_read",

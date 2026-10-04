@@ -168,6 +168,8 @@ Key runtime settings include:
 
 Target overrides can be supplied through `TARGET_<TARGET_ID>_...` environment variables for per-target read/write/anonymization behavior.
 
+Targets with anonymization enabled also accept `anonymization_trust` (`corroborated` default | `strict`): `strict` ignores any provider "not sensitive" verdict on columns not recognised deterministically, so those string columns are masked. Anonymization decisions are logged per reason (`db.anonymizer_decisions`) without values.
+
 Important rule:
 
 - connection strings, API keys, passwords, and secrets must not live in the repository `.env`
