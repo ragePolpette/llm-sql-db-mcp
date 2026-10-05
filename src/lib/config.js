@@ -216,7 +216,8 @@ export function loadRuntimeConfig({ cwd = process.cwd(), env = process.env } = {
       hashSalt: env.ANON_HASH_SALT ?? "",
       failOpen: parseBoolean(env.ANON_FAIL_OPEN, false),
       timeoutMs: anonymizerTimeoutMs,
-      minConfidence: anonymizerMinConfidence
+      minConfidence: anonymizerMinConfidence,
+      catalogPath: String(env.ANON_CATALOG_PATH ?? "").trim()
     }
   };
 }

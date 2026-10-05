@@ -164,6 +164,7 @@ Key runtime settings include:
 - `ANON_FIELD_IDENTIFICATION`
 - `ANON_FAIL_OPEN`
 - `ANON_TIMEOUT_MS`
+- `ANON_CATALOG_PATH` (optional: enables the self-populating column catalog; keep it outside the repo, it contains schema names)
 - `ANON_MIN_CONFIDENCE` (0-1, default 0.8: a provider `none` verdict below this confidence is ignored and the column is masked)
 
 Target overrides can be supplied through `TARGET_<TARGET_ID>_...` environment variables for per-target read/write/anonymization behavior.
@@ -219,3 +220,20 @@ This repository is in active development and should be treated as the current ca
 ## Development Process
 
 Built with AI-assisted workflows, while architecture, tradeoffs, integration, review, and validation were directed by the author.
+
+
+## Anonymization catalog
+
+With `ANON_CATALOG_PATH` set, the server learns which columns are safe or sensitive per target and you review the result periodically:
+
+```
+npm run anon:catalog -- list                      # pending columns, most used first
+npm run anon:catalog -- list --status auto-safe   # what was auto-promoted (worth a skim)
+npm run anon:catalog -- set dbo.Clienti.Note sensitive --kind text
+npm run anon:catalog -- set dbo.Ordini.Stato safe
+```
+
+- Needs SQL Server column origins (`sys.dm_exec_describe_first_result_set`); results without origins do not touch the catalog.
+- `auto-safe` is granted only to repeated, short, non-name-like, PII-free value sets. Free text and Title Case values stay masked until a human decides.
+- Machine evidence is per `target_id` (dev data never vouches for prod). Human verdicts apply to all targets.
+- Verdicts can only be edited with the CLI, never through MCP tools.

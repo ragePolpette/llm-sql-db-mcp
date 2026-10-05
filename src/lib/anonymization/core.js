@@ -584,18 +584,86 @@ function isUnionLikeSql(sqlText) {
 // matter. Computed columns (expressions, aggregates, UNION branches) are flagged `derived`.
 function buildColumnResolver(columnOrigins, sqlText) {
   if (!isObject(columnOrigins)) {
-    return key => ({ classKey: key, derived: false });
+    return key => ({ classKey: key, derived: false, catalogKey: null });
   }
   const forceDerived = isUnionLikeSql(sqlText);
   return key => {
-    if (forceDerived) return { classKey: key, derived: true };
+    if (forceDerived) return { classKey: key, derived: true, catalogKey: null };
     const entry = Object.prototype.hasOwnProperty.call(columnOrigins, key) ? columnOrigins[key] : undefined;
-    if (!entry || !entry.column) return { classKey: key, derived: true };
-    return { classKey: entry.column, derived: false };
+    if (!entry || !entry.column) return { classKey: key, derived: true, catalogKey: null };
+    const catalogKey = [entry.schema, entry.table, entry.column].filter(Boolean).join(".");
+    return { classKey: entry.column, derived: false, catalogKey };
   };
 }
 
-function deterministicFallback(rows, cfg, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE, columnProfiles = null, resolveColumn = key => ({ classKey: key, derived: false }), report = null) {
+const TITLE_CASE_REGEX = /^\p{Lu}\p{Ll}+(?:[\s'-]+\p{Lu}\p{Ll}+)*$/u;
+
+function isCleanForAutoSafe(profile) {
+  if (!profile) return false;
+  if (columnHasPiiPatterns(profile)) return false;
+  return profile.values.every(value => value.length <= 20 && !TITLE_CASE_REGEX.test(value));
+}
+
+// Human verdicts and machine "sensitive" verdicts override everything; a machine "safe" verdict
+// (evidence-based) only fills the gaps left by an undecided or provider-"none" column.
+function decideFromCatalog(entry, derived) {
+  if (!entry) return null;
+  if (entry.human?.verdict === "sensitive") {
+    return { kind: entry.human.kind && KIND_VALUES.has(entry.human.kind) ? entry.human.kind : "text", reason: "catalog:human-sensitive" };
+  }
+  if (entry.human?.verdict === "safe" && !derived) {
+    return { kind: NONE_KIND, reason: "catalog:human-safe" };
+  }
+  if (entry.target?.status === "auto-sensitive" && KIND_VALUES.has(entry.target.kind)) {
+    return { kind: entry.target.kind, reason: "catalog:auto-sensitive" };
+  }
+  return null;
+}
+
+function isOverridableByAutoSafe(resolved) {
+  return (
+    resolved.kind === NONE_KIND ||
+    resolved.reason === "fallback:unknown-text" ||
+    resolved.reason.endsWith(">fallback:text")
+  );
+}
+
+function observationStatusFor(reason) {
+  if (reason.startsWith("catalog:human") || reason === "kept:non-string") return null;
+  if (reason.startsWith("catalog:auto-sensitive")) return "sensitive";
+  if (reason.startsWith("catalog:auto-safe")) return "revalidate";
+  if (reason.startsWith("heuristic:") || reason.startsWith("provider:")) return "sensitive";
+  if (reason.startsWith("safe:technical")) return "technical";
+  return "pending";
+}
+
+function buildCatalogObservation(entry, profile, cfg) {
+  const status = observationStatusFor(entry.reason);
+  if (!status) return null;
+  const salt = getHashSalt(cfg);
+  const values = profile?.values ?? [];
+  const hashes = new Set();
+  let maxLen = 0;
+  let titlecase = false;
+  for (const value of values) {
+    if (hashes.size <= 12) hashes.add(stableDigest(salt, "catalog", value, 8));
+    if (value.length > maxLen) maxLen = value.length;
+    if (!titlecase && TITLE_CASE_REGEX.test(value)) titlecase = true;
+  }
+  return {
+    key: entry.catalogKey,
+    status,
+    kind: entry.kind ?? null,
+    reason: entry.reason,
+    cells: values.length,
+    hashes: [...hashes],
+    max_len: maxLen,
+    pii: columnHasPiiPatterns(profile),
+    titlecase
+  };
+}
+
+function deterministicFallback(rows, cfg, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE, columnProfiles = null, resolveColumn = key => ({ classKey: key, derived: false, catalogKey: null }), report = null, catalogCtx = null) {
   const trust = cfg?.trust === "strict" ? "strict" : "corroborated";
   return rows.map(row => {
     if (!isObject(row)) return row;
@@ -605,8 +673,23 @@ function deterministicFallback(rows, cfg, fieldKindMap, cacheScope = GLOBAL_CACH
       const value = out[key];
       if (value === null || value === undefined) continue;
 
-      const { classKey, derived } = resolveColumn(key);
-      const { kind, reason } = resolveKindForValue(classKey, value, fieldKindMap, cacheScope, columnProfiles, derived, key, trust);
+      const { classKey, derived, catalogKey } = resolveColumn(key);
+      const catalogEntry = catalogCtx && catalogKey ? catalogCtx.lookup(catalogKey) : null;
+      const profile = columnProfiles?.get(normalizeKey(key)) || null;
+      let decision = decideFromCatalog(catalogEntry, derived);
+      if (!decision) {
+        decision = resolveKindForValue(classKey, value, fieldKindMap, cacheScope, columnProfiles, derived, key, trust);
+        if (
+          catalogEntry?.target?.status === "auto-safe" &&
+          !derived &&
+          isOverridableByAutoSafe(decision) &&
+          isCleanForAutoSafe(profile)
+        ) {
+          decision = { kind: NONE_KIND, reason: "catalog:auto-safe" };
+        }
+      }
+      const { kind, reason } = decision;
+      catalogCtx?.observe(catalogKey, key, reason, kind);
       let masked = false;
       let finalReason = reason;
       if (kind === NONE_KIND) {
@@ -695,6 +778,32 @@ function parseFieldDecision(raw) {
   }
   // Legacy plain-string answers carry no confidence and are taken at face value.
   return { kind: raw, confidence: 1 };
+}
+
+function createCatalogContext(catalog, targetId) {
+  if (!catalog || !targetId) return null;
+  catalog.refresh();
+  const lookups = new Map();
+  const observed = new Map();
+  return {
+    lookup(catalogKey) {
+      if (!lookups.has(catalogKey)) lookups.set(catalogKey, catalog.lookup(targetId, catalogKey));
+      return lookups.get(catalogKey);
+    },
+    observe(catalogKey, outputKey, reason, kind) {
+      if (!catalogKey || observed.has(catalogKey)) return;
+      observed.set(catalogKey, { catalogKey, outputKey, reason, kind: kind && kind !== NONE_KIND ? kind : null });
+    },
+    commit(columnProfiles, cfg) {
+      const observations = [];
+      for (const entry of observed.values()) {
+        const profile = columnProfiles?.get(normalizeKey(entry.outputKey)) || null;
+        const observation = buildCatalogObservation(entry, profile, cfg);
+        if (observation) observations.push(observation);
+      }
+      catalog.record(targetId, observations);
+    }
+  };
 }
 
 async function promptProvider(cfg, systemPrompt, userPrompt, fetchImpl) {
@@ -835,7 +944,9 @@ export async function anonymizeRows(rows, cfg, options = {}) {
   }
 
   const report = createDecisionReport();
-  const masked = deterministicFallback(rows, cfg, fieldKindMap, cacheScope, columnProfiles, resolveColumn, report);
+  const catalogCtx = createCatalogContext(options?.catalog, options?.targetId);
+  const masked = deterministicFallback(rows, cfg, fieldKindMap, cacheScope, columnProfiles, resolveColumn, report, catalogCtx);
+  catalogCtx?.commit(columnProfiles, cfg);
   if (typeof options?.onReport === "function") {
     try {
       options.onReport(report.summarize());

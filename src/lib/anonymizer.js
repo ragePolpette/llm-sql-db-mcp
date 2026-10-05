@@ -1,3 +1,4 @@
+import { getCatalog } from "./anonymization/catalog.js";
 import {
   anonymizeRows,
   extractJsonFromText,
@@ -92,6 +93,8 @@ export async function anonymizeQueryResult({
   const maskedRows = await anonymizeRows(queryResult.rows, anonymizerConfig, {
     sqlText: queryResult.sql_text,
     columnOrigins,
+    catalog: getCatalog(providerConfig.catalogPath),
+    targetId: target.target_id,
     onReport,
     fetchImpl
   });
