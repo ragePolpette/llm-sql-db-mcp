@@ -130,7 +130,7 @@ async function describeColumnOrigins(pool, sqlText, parameters) {
     request.input("tsql", sql.NVarChar(sql.MAX), sqlText);
     request.input("params", sql.NVarChar(sql.MAX), declarations.length > 0 ? declarations.join(", ") : null);
     const described = await request.query(
-      "SELECT name, source_table, source_column FROM sys.dm_exec_describe_first_result_set(@tsql, @params, 1) WHERE is_hidden = 0"
+      "SELECT name, source_schema, source_table, source_column FROM sys.dm_exec_describe_first_result_set(@tsql, @params, 1) WHERE is_hidden = 0"
     );
 
     const origins = {};
@@ -140,7 +140,7 @@ async function describeColumnOrigins(pool, sqlText, parameters) {
       origins[row.name] =
         Object.prototype.hasOwnProperty.call(origins, row.name) || !row.source_column
           ? null
-          : { table: row.source_table ?? null, column: row.source_column };
+          : { schema: row.source_schema ?? null, table: row.source_table ?? null, column: row.source_column };
     }
     return origins;
   } catch {

@@ -456,38 +456,61 @@ export function parseProviderJson(text) {
   }
 }
 
-function resolveKindForKey(key, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE, derived = false) {
+const PII_SCAN_PHONE_REGEX = /(?:\+|\b00)\d[\d\s().-]{7,}\d|\b3\d{2}[\s.-]?\d{6,7}\b/;
+
+// Deterministic check over every value of a column in the current result: a column that the provider
+// called "none" but that visibly contains e-mails, IBANs or phone numbers is not "none".
+function columnHasPiiPatterns(profile) {
+  if (!profile) return false;
+  if (profile.piiPatterns !== undefined) return profile.piiPatterns;
+  profile.piiPatterns = profile.values.some(value => {
+    if (new RegExp(EMAIL_REGEX.source, "i").test(value)) return true;
+    if (PII_SCAN_PHONE_REGEX.test(value)) return true;
+    const ibans = value.match(IBAN_CANDIDATE_REGEX) || [];
+    return ibans.some(isValidIban);
+  });
+  return profile.piiPatterns;
+}
+
+function resolveKindForKey(key, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE, derived = false, profile = null, trust = "corroborated") {
   const normalized = normalizeKey(key);
-  if (!normalized) return null;
+  if (!normalized) return { kind: null, reason: "no-key" };
 
   const heuristic = inferKindHeuristic(key);
+  const heuristicResult = heuristic ? { kind: heuristic, reason: `heuristic:${heuristic}` } : { kind: null, reason: "undecided" };
   const decision = fieldKindMap?.has(normalized)
     ? fieldKindMap.get(normalized)
     : getCachedKindDecision(normalized, cacheScope);
 
-  if (decision) {
-    if (decision === NONE_KIND) {
-      // A "none" verdict is never trusted for computed columns (the alias is caller-controlled)
-      // and never downgrades a strong heuristic hit.
-      if (derived) return heuristic;
-      if (heuristic && STRONG_KINDS.has(heuristic)) return heuristic;
-      return NONE_KIND;
-    }
-    return decision;
-  }
+  if (!decision) return heuristicResult;
+  if (decision !== NONE_KIND) return { kind: decision, reason: `provider:${decision}` };
 
-  return heuristic;
+  // A provider "none" verdict is only ever a claim of safety, never evidence of it:
+  if (derived) return { ...heuristicResult, reason: heuristic ? heuristicResult.reason : "provider-none-ignored:derived" };
+  if (heuristic && STRONG_KINDS.has(heuristic)) return heuristicResult;
+  if (trust === "strict") return { ...heuristicResult, reason: heuristic ? heuristicResult.reason : "provider-none-ignored:strict" };
+  if (columnHasPiiPatterns(profile)) {
+    return { ...heuristicResult, reason: heuristic ? heuristicResult.reason : "provider-none-rejected:pii-pattern" };
+  }
+  return { kind: NONE_KIND, reason: "provider-none" };
 }
 
-function resolveKindForValue(key, value, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE, columnProfiles = null, derived = false, profileKey = key) {
-  const kind = resolveKindForKey(key, fieldKindMap, cacheScope, derived);
-  if (kind) return kind;
+function resolveKindForValue(key, value, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE, columnProfiles = null, derived = false, profileKey = key, trust = "corroborated") {
+  const profile = columnProfiles?.get(normalizeKey(profileKey)) || null;
+  const resolved = resolveKindForKey(key, fieldKindMap, cacheScope, derived, profile, trust);
+  if (resolved.kind) return resolved;
   // Computed columns get no "technical name" exemption: `SELECT cognome AS tipo` must stay masked.
-  if (!derived && isTechnicalSafeColumn(key, value, columnProfiles, profileKey)) return NONE_KIND;
-  if (typeof value === "string" && value.trim()) {
-    return "text";
+  if (!derived && isTechnicalSafeColumn(key, value, columnProfiles, profileKey)) {
+    return { kind: NONE_KIND, reason: "safe:technical" };
   }
-  return null;
+  if (typeof value === "string" && value.trim()) {
+    // Keep the provider-verdict explanation when that is why the column ended up masked.
+    const reason = resolved.reason.startsWith("provider-none-")
+      ? `${resolved.reason}>fallback:text`
+      : derived ? "fallback:derived-text" : "fallback:unknown-text";
+    return { kind: "text", reason };
+  }
+  return { kind: null, reason: "kept:non-string" };
 }
 
 function replaceByKind(kind, key, value, cfg) {
@@ -561,18 +584,87 @@ function isUnionLikeSql(sqlText) {
 // matter. Computed columns (expressions, aggregates, UNION branches) are flagged `derived`.
 function buildColumnResolver(columnOrigins, sqlText) {
   if (!isObject(columnOrigins)) {
-    return key => ({ classKey: key, derived: false });
+    return key => ({ classKey: key, derived: false, catalogKey: null });
   }
   const forceDerived = isUnionLikeSql(sqlText);
   return key => {
-    if (forceDerived) return { classKey: key, derived: true };
+    if (forceDerived) return { classKey: key, derived: true, catalogKey: null };
     const entry = Object.prototype.hasOwnProperty.call(columnOrigins, key) ? columnOrigins[key] : undefined;
-    if (!entry || !entry.column) return { classKey: key, derived: true };
-    return { classKey: entry.column, derived: false };
+    if (!entry || !entry.column) return { classKey: key, derived: true, catalogKey: null };
+    const catalogKey = [entry.schema, entry.table, entry.column].filter(Boolean).join(".");
+    return { classKey: entry.column, derived: false, catalogKey };
   };
 }
 
-function deterministicFallback(rows, cfg, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE, columnProfiles = null, resolveColumn = key => ({ classKey: key, derived: false })) {
+const TITLE_CASE_REGEX = /^\p{Lu}\p{Ll}+(?:[\s'-]+\p{Lu}\p{Ll}+)*$/u;
+
+function isCleanForAutoSafe(profile) {
+  if (!profile) return false;
+  if (columnHasPiiPatterns(profile)) return false;
+  return profile.values.every(value => value.length <= 20 && !TITLE_CASE_REGEX.test(value));
+}
+
+// Human verdicts and machine "sensitive" verdicts override everything; a machine "safe" verdict
+// (evidence-based) only fills the gaps left by an undecided or provider-"none" column.
+function decideFromCatalog(entry, derived) {
+  if (!entry) return null;
+  if (entry.human?.verdict === "sensitive") {
+    return { kind: entry.human.kind && KIND_VALUES.has(entry.human.kind) ? entry.human.kind : "text", reason: "catalog:human-sensitive" };
+  }
+  if (entry.human?.verdict === "safe" && !derived) {
+    return { kind: NONE_KIND, reason: "catalog:human-safe" };
+  }
+  if (entry.target?.status === "auto-sensitive" && KIND_VALUES.has(entry.target.kind)) {
+    return { kind: entry.target.kind, reason: "catalog:auto-sensitive" };
+  }
+  return null;
+}
+
+function isOverridableByAutoSafe(resolved) {
+  return (
+    resolved.kind === NONE_KIND ||
+    resolved.reason === "fallback:unknown-text" ||
+    resolved.reason.endsWith(">fallback:text")
+  );
+}
+
+function observationStatusFor(reason) {
+  if (reason.startsWith("catalog:human") || reason === "kept:non-string") return null;
+  if (reason.startsWith("catalog:auto-sensitive")) return "sensitive";
+  if (reason.startsWith("catalog:auto-safe")) return "revalidate";
+  if (reason.startsWith("heuristic:") || reason.startsWith("provider:")) return "sensitive";
+  if (reason.startsWith("safe:technical")) return "technical";
+  return "pending";
+}
+
+function buildCatalogObservation(entry, profile, cfg) {
+  const status = observationStatusFor(entry.reason);
+  if (!status) return null;
+  const salt = getHashSalt(cfg);
+  const values = profile?.values ?? [];
+  const hashes = new Set();
+  let maxLen = 0;
+  let titlecase = false;
+  for (const value of values) {
+    if (hashes.size <= 12) hashes.add(stableDigest(salt, "catalog", value, 8));
+    if (value.length > maxLen) maxLen = value.length;
+    if (!titlecase && TITLE_CASE_REGEX.test(value)) titlecase = true;
+  }
+  return {
+    key: entry.catalogKey,
+    status,
+    kind: entry.kind ?? null,
+    reason: entry.reason,
+    cells: values.length,
+    hashes: [...hashes],
+    max_len: maxLen,
+    pii: columnHasPiiPatterns(profile),
+    titlecase
+  };
+}
+
+function deterministicFallback(rows, cfg, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE, columnProfiles = null, resolveColumn = key => ({ classKey: key, derived: false, catalogKey: null }), report = null, catalogCtx = null) {
+  const trust = cfg?.trust === "strict" ? "strict" : "corroborated";
   return rows.map(row => {
     if (!isObject(row)) return row;
 
@@ -581,23 +673,63 @@ function deterministicFallback(rows, cfg, fieldKindMap, cacheScope = GLOBAL_CACH
       const value = out[key];
       if (value === null || value === undefined) continue;
 
-      const { classKey, derived } = resolveColumn(key);
-      const kind = resolveKindForValue(classKey, value, fieldKindMap, cacheScope, columnProfiles, derived, key);
+      const { classKey, derived, catalogKey } = resolveColumn(key);
+      const catalogEntry = catalogCtx && catalogKey ? catalogCtx.lookup(catalogKey) : null;
+      const profile = columnProfiles?.get(normalizeKey(key)) || null;
+      let decision = decideFromCatalog(catalogEntry, derived);
+      if (!decision) {
+        decision = resolveKindForValue(classKey, value, fieldKindMap, cacheScope, columnProfiles, derived, key, trust);
+        if (
+          catalogEntry?.target?.status === "auto-safe" &&
+          !derived &&
+          isOverridableByAutoSafe(decision) &&
+          isCleanForAutoSafe(profile)
+        ) {
+          decision = { kind: NONE_KIND, reason: "catalog:auto-safe" };
+        }
+      }
+      const { kind, reason } = decision;
+      catalogCtx?.observe(catalogKey, key, reason, kind);
+      let masked = false;
+      let finalReason = reason;
       if (kind === NONE_KIND) {
-        out[key] = maskSensitiveValuePatterns(value, cfg);
-        continue;
-      }
-      if (kind) {
+        const floored = maskSensitiveValuePatterns(value, cfg);
+        masked = floored !== value;
+        if (masked) finalReason = `${reason}+floor:pattern`;
+        out[key] = floored;
+      } else if (kind) {
         out[key] = replaceByKind(kind, classKey, value, cfg);
-        continue;
-      }
-
-      if (typeof value === "string") {
+        masked = true;
+      } else if (typeof value === "string") {
         out[key] = maskInlineWithHashes(value, cfg);
+        masked = out[key] !== value;
       }
+      report?.record(key, classKey, derived, finalReason, masked);
     }
     return out;
   });
+}
+
+function createDecisionReport() {
+  const columns = new Map();
+  return {
+    record(column, classKey, derived, reason, masked) {
+      const entry = columns.get(column) ?? { column, source: classKey, derived, reasons: {}, masked_cells: 0, cells: 0 };
+      entry.cells += 1;
+      if (masked) entry.masked_cells += 1;
+      entry.reasons[reason] = (entry.reasons[reason] ?? 0) + 1;
+      columns.set(column, entry);
+    },
+    summarize() {
+      const byReason = {};
+      for (const entry of columns.values()) {
+        for (const [reason, count] of Object.entries(entry.reasons)) {
+          byReason[reason] = (byReason[reason] ?? 0) + count;
+        }
+      }
+      return { columns: [...columns.values()], by_reason: byReason };
+    }
+  };
 }
 
 function buildFieldProbePayload(rows, columnProfiles = null, resolveColumn = key => ({ classKey: key, derived: false })) {
@@ -646,6 +778,32 @@ function parseFieldDecision(raw) {
   }
   // Legacy plain-string answers carry no confidence and are taken at face value.
   return { kind: raw, confidence: 1 };
+}
+
+function createCatalogContext(catalog, targetId) {
+  if (!catalog || !targetId) return null;
+  catalog.refresh();
+  const lookups = new Map();
+  const observed = new Map();
+  return {
+    lookup(catalogKey) {
+      if (!lookups.has(catalogKey)) lookups.set(catalogKey, catalog.lookup(targetId, catalogKey));
+      return lookups.get(catalogKey);
+    },
+    observe(catalogKey, outputKey, reason, kind) {
+      if (!catalogKey || observed.has(catalogKey)) return;
+      observed.set(catalogKey, { catalogKey, outputKey, reason, kind: kind && kind !== NONE_KIND ? kind : null });
+    },
+    commit(columnProfiles, cfg) {
+      const observations = [];
+      for (const entry of observed.values()) {
+        const profile = columnProfiles?.get(normalizeKey(entry.outputKey)) || null;
+        const observation = buildCatalogObservation(entry, profile, cfg);
+        if (observation) observations.push(observation);
+      }
+      catalog.record(targetId, observations);
+    }
+  };
 }
 
 async function promptProvider(cfg, systemPrompt, userPrompt, fetchImpl) {
@@ -785,7 +943,18 @@ export async function anonymizeRows(rows, cfg, options = {}) {
     }
   }
 
-  return deterministicFallback(rows, cfg, fieldKindMap, cacheScope, columnProfiles, resolveColumn);
+  const report = createDecisionReport();
+  const catalogCtx = createCatalogContext(options?.catalog, options?.targetId);
+  const masked = deterministicFallback(rows, cfg, fieldKindMap, cacheScope, columnProfiles, resolveColumn, report, catalogCtx);
+  catalogCtx?.commit(columnProfiles, cfg);
+  if (typeof options?.onReport === "function") {
+    try {
+      options.onReport(report.summarize());
+    } catch {
+      // Reporting must never affect anonymization.
+    }
+  }
+  return masked;
 }
 
 export const __anonymizationCoreTestUtils = {

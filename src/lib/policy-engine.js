@@ -25,6 +25,7 @@ export function toSafeTargetInfo(target) {
     ...toSafeTargetSummary(target),
     allowed_tools: clone(target.allowed_tools),
     anonymization_mode: target.anonymization_mode,
+    anonymization_trust: target.anonymization_trust,
     effective_limits: {
       max_rows: target.max_rows,
       max_result_bytes: target.max_result_bytes

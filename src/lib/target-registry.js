@@ -3,6 +3,7 @@ import { z } from "zod";
 
 const allowedProviders = ["none", "lmstudio", "ollama"];
 const allowedStatuses = ["active", "disabled"];
+const allowedAnonymizationTrust = ["corroborated", "strict"];
 const allowedAnonymizationModes = ["off", "direct", "deterministic", "hybrid", "llm-strict"];
 const targetStateSchema = z.object({
   runtime_status: z.string().min(1).optional(),
@@ -22,6 +23,7 @@ const targetSchema = z
     write_enabled: z.boolean(),
     anonymization_enabled: z.boolean(),
     anonymization_mode: z.enum(allowedAnonymizationModes),
+    anonymization_trust: z.enum(allowedAnonymizationTrust).default("corroborated"),
     llm_provider: z.enum(allowedProviders),
     llm_model: z.string(),
     max_rows: z.number().int().positive(),
@@ -144,6 +146,11 @@ function applyTargetEnvOverrides(target, env) {
   const anonymizationMode = env[`${prefix}_ANONYMIZATION_MODE`];
   if (anonymizationMode !== undefined && anonymizationMode !== "") {
     nextTarget.anonymization_mode = String(anonymizationMode).trim().toLowerCase();
+  }
+
+  const trust = env[`${prefix}_ANONYMIZATION_TRUST`];
+  if (trust !== undefined && trust !== "") {
+    nextTarget.anonymization_trust = String(trust).trim().toLowerCase();
   }
 
   const provider = env[`${prefix}_LLM_PROVIDER`];

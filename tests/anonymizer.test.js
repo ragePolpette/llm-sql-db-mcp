@@ -96,3 +96,25 @@ test("anonymizeQueryResult uses column origins but never returns them to the cli
   assert.match(result.rows[0].tipo, /^NAME_/);
   assert.equal("column_origins" in result, false);
 });
+
+test("resolveFailOpen is closed for missing or unknown environments and open only for known non-prod ones", () => {
+  const open = env => __anonymizerTestUtils.resolveFailOpen(createTarget({ environment: env }), { failOpen: true });
+  assert.equal(open(""), false);
+  assert.equal(open(undefined), false);
+  assert.equal(open("production-eu"), false);
+  assert.equal(open("staging"), true);
+  assert.equal(open("test"), true);
+  assert.equal(open("DEV"), true);
+});
+
+test("anonymizeQueryResult forwards the decision report to onReport", async () => {
+  const { anonymizeQueryResult } = await import("../src/lib/anonymizer.js");
+  let report;
+  await anonymizeQueryResult({
+    target: { anonymization_enabled: true, anonymization_mode: "deterministic", llm_provider: "none", environment: "prod" },
+    queryResult: { rows: [{ email: "a@b.it" }], sql_text: "SELECT email FROM dbo.u", max_result_bytes_applied: null, truncated: false },
+    providerConfig: { hashSalt: "salt-salt-salt", failOpen: false, timeoutMs: 1000, fieldIdentification: "heuristic" },
+    onReport: r => { report = r; }
+  });
+  assert.equal(report.by_reason["heuristic:email"], 1);
+});
