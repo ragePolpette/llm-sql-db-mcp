@@ -106,7 +106,8 @@ async function getPool(connectionString, driverConfig = {}) {
 }
 
 function describeParameterType(value) {
-  if (typeof value === "string") return "nvarchar(max)";
+  // Only the type is needed to compile the query; a null value still needs a declaration.
+  if (value === null || value === undefined || typeof value === "string") return "nvarchar(max)";
   if (typeof value === "boolean") return "bit";
   if (typeof value === "bigint") return "bigint";
   if (typeof value === "number") return Number.isInteger(value) ? "bigint" : "float";
@@ -116,7 +117,8 @@ function describeParameterType(value) {
 
 // Resolves each output column to its source table/column (SQL Server browse metadata), so that
 // anonymization classifies the real column rather than the caller-chosen alias. Computed columns map
-// to null. Returns null when the metadata cannot be obtained; callers must then treat origins as unknown.
+// to null. Returns null when the metadata cannot be obtained (temp tables, unsupported parameter types,
+// permissions, ...); the anonymizer then treats every column as computed and exempts nothing by name.
 async function describeColumnOrigins(pool, sqlText, parameters) {
   try {
     const declarations = [];

@@ -12,11 +12,12 @@ Il formato segue in modo leggero [Keep a Changelog](https://keepachangelog.com/e
 - Driver reports `source_schema` for column origins (catalog keys are `schema.table.column`).
 
 ### Security
+- Anonymization: when column origins cannot be resolved (a `null` SQL parameter, temp tables, unsupported parameter types, permission or SQL Server errors) every column is now treated as computed: nothing is exempted by name and provider "none" verdicts are ignored. Previously the anonymizer fell back to trusting output names, so `SELECT cognome AS tipo ... WHERE x = @p` with `p = null` returned names in clear. `null` parameters are also declared as `nvarchar(max)` so they no longer prevent metadata resolution.
 - Anonymization (phase A): per-column decision reasons are logged as `db.anonymizer_decisions` (aggregate counts at `info`, per-column detail at `debug`, never values).
 - Anonymization: new per-target `anonymization_trust` (`corroborated` default, `strict`; env override `TARGET_<ID>_ANONYMIZATION_TRUST`). `strict` never accepts a provider `none` verdict on unknown columns; `corroborated` also rejects it when the column visibly contains e-mails, IBANs or phone numbers.
 - Anonymization: `ANON_FAIL_OPEN` now applies only to explicitly non-production environments (`dev`, `test`, `staging`); a missing or unknown `environment` is treated as production. Targets with anonymization disabled are unchanged (results pass through).
 - Anonymization: a provider `none` verdict can no longer downgrade a strong heuristic hit (email, phone, name, iban, date) and is ignored for computed columns.
-- Anonymization: on SQL Server the driver resolves each output column to its source column (`sys.dm_exec_describe_first_result_set`), so aliasing (`SELECT cognome AS tipo`) no longer bypasses masking. Computed columns and UNION queries lose the technical-name exemption; if origins cannot be resolved the previous name-based behaviour applies.
+- Anonymization: on SQL Server the driver resolves each output column to its source column (`sys.dm_exec_describe_first_result_set`), so aliasing (`SELECT cognome AS tipo`) no longer bypasses masking. Computed columns and UNION queries lose the technical-name exemption.
 - Anonymization: e-mail addresses and checksum-valid IBANs are masked in every string value, even in columns judged technical; birth-date and IBAN columns are masked by name.
 - Anonymization: the provider is asked for a confidence; a `none` verdict below `ANON_MIN_CONFIDENCE` (default 0.8) is ignored and the column stays masked. Prompt now flags sample values as untrusted.
 

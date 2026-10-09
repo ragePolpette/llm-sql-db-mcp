@@ -582,9 +582,11 @@ function isUnionLikeSql(sqlText) {
 // Maps a result column to the key used for classification.
 // With column origins (SQL Server browse metadata) the *source* column name is used, so aliases do not
 // matter. Computed columns (expressions, aggregates, UNION branches) are flagged `derived`.
+// Without origins the output names are caller-chosen aliases and cannot be trusted: every column is
+// treated as computed (name heuristics still add masking, nothing is exempted by name).
 function buildColumnResolver(columnOrigins, sqlText) {
   if (!isObject(columnOrigins)) {
-    return key => ({ classKey: key, derived: false, catalogKey: null });
+    return key => ({ classKey: key, derived: true, catalogKey: null });
   }
   const forceDerived = isUnionLikeSql(sqlText);
   return key => {
