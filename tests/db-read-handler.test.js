@@ -460,3 +460,53 @@ test("dbWrite is denied for prod targets by the hard fence", async () => {
   assert.equal(result.isError, true);
   assert.match(result.content[0].text, /Write access is (disabled|hard-fenced off)/i);
 });
+
+function createFailingHandlers(error, events) {
+  return createHandlers({
+    targetRegistry: createTestRegistry(),
+    env: {
+      DB_DEV_MAIN_CONNECTION_STRING: "Server=.;Database=Dev;Trusted_Connection=True;",
+      DB_PROD_MAIN_CONNECTION_STRING: "Server=.;Database=Prod;Trusted_Connection=True;"
+    },
+    providerConfig: {},
+    executeSqlRead: async () => {
+      throw error;
+    },
+    anonymizeQueryResult: async () => {
+      throw new Error("should not be called");
+    },
+    logDbEvent: (event, payload) => events.push({ event, payload })
+  });
+}
+
+function conversionError() {
+  const error = new Error("Conversion failed when converting the nvarchar value 'Rossi' to data type int.");
+  error.name = "RequestError";
+  error.number = 245;
+  return error;
+}
+
+test("dbRead redacts data values echoed by SQL errors on anonymized targets, in response and logs", async () => {
+  const events = [];
+  const handlers = createFailingHandlers(conversionError(), events);
+  const result = await handlers.dbRead({ target_id: "prod-main", sql: "SELECT CAST(cognome AS int) FROM dbo.u" });
+
+  assert.equal(result.isError, true);
+  assert.equal(JSON.stringify(result).includes("Rossi"), false);
+  assert.equal(parseErrorEnvelope(result).error.code, "db_read_failed");
+  const failed = events.find(entry => entry.event === "query_failed");
+  assert.equal(failed.payload.error.includes("Rossi"), false);
+});
+
+test("dbRead keeps compile-time SQL errors readable on anonymized targets", async () => {
+  const error = new Error("Invalid column name 'cognmoe'.");
+  error.name = "RequestError";
+  error.number = 207;
+  const result = await createFailingHandlers(error, []).dbRead({ target_id: "prod-main", sql: "SELECT cognmoe FROM dbo.u" });
+  assert.match(result.content[0].text, /Invalid column name 'cognmoe'\./);
+});
+
+test("dbRead leaves SQL errors untouched on targets without anonymization", async () => {
+  const result = await createFailingHandlers(conversionError(), []).dbRead({ target_id: "dev-main", sql: "SELECT CAST(cognome AS int) FROM dbo.u" });
+  assert.match(result.content[0].text, /'Rossi'/);
+});
