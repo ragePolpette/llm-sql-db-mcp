@@ -431,3 +431,34 @@ test("runDiagnosticQuery normalizes blank ticket_key to null", async () => {
   assert.equal(result.structuredContent.used.ticket_key, null);
   assert.equal(result.structuredContent.summary.ticket_key, null);
 });
+
+test("runDiagnosticQuery forwards anonymization notes into the summary", async () => {
+  const note = "Column origins unavailable (describe_failed): ...";
+  const handlers = createHandlers({
+    targetRegistry: createTestRegistry(),
+    env: { DB_PROD_MAIN_CONNECTION_STRING: "Server=prod;Database=Prod;" },
+    providerConfig: {},
+    executeSqlRead: async () => ({
+      columns: [{ name: "tipo", nullable: true, type: "NVarChar" }],
+      rows: [{ tipo: "Rossi" }],
+      row_count: 1,
+      total_rows_before_limits: 1,
+      max_rows_applied: 5,
+      max_result_bytes_applied: 1024,
+      result_bytes: 8,
+      truncated: false,
+      duration_ms: 1
+    }),
+    anonymizeQueryResult: async ({ queryResult }) => ({
+      ...queryResult,
+      rows: [{ tipo: "TEXT_X" }],
+      anonymization_applied: true,
+      anonymization_provider: "lmstudio",
+      anonymization_mode: "hybrid",
+      anonymization_notes: [note]
+    })
+  });
+
+  const result = await handlers.runDiagnosticQuery({ database_target: "prod", query: "SELECT cognome AS tipo FROM dbo.u" });
+  assert.deepEqual(result.structuredContent.summary.anonymization_notes, [note]);
+});

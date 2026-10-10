@@ -111,7 +111,7 @@ const PROD_TARGET = {
 };
 const PROVIDER_CONFIG = { hashSalt: "salt-salt-salt", fieldIdentification: "heuristic", timeoutMs: 1000 };
 
-async function readAndAnonymize(pool, parameters) {
+async function readAndAnonymize(pool, parameters, { onReport } = {}) {
   __sqlServerTestUtils.resetPoolCache();
   __sqlServerTestUtils.setCachedPool("fake-db", pool);
   const queryResult = await executeSqlServerRead({
@@ -126,7 +126,8 @@ async function readAndAnonymize(pool, parameters) {
   return anonymizeQueryResult({
     target: PROD_TARGET,
     queryResult: { ...queryResult, sql_text: ALIAS_SQL },
-    providerConfig: PROVIDER_CONFIG
+    providerConfig: PROVIDER_CONFIG,
+    onReport
   });
 }
 
@@ -165,4 +166,75 @@ test("an unsupported parameter type skips metadata and still masks aliased value
   assert.equal(pool.describeCalls.length, 0);
   assert.notEqual(result.rows[0].tipo, "Rossi");
   assert.notEqual(result.rows[0].stato, "Mario");
+});
+
+async function readOnly(pool, parameters) {
+  __sqlServerTestUtils.resetPoolCache();
+  __sqlServerTestUtils.setCachedPool("fake-db", pool);
+  try {
+    return await executeSqlServerRead({
+      connectionString: "fake-db",
+      sqlText: ALIAS_SQL,
+      parameters,
+      maxRows: 10,
+      maxResultBytes: null,
+      describeOrigins: true
+    });
+  } finally {
+    __sqlServerTestUtils.resetPoolCache();
+  }
+}
+
+test("the driver reports why column origins are unavailable", async () => {
+  const errorRow = await readOnly(
+    createFakePool({
+      describeRows: [{ name: null, error_number: 208, error_message: "Invalid object name '#tmp'.", error_type_desc: "INVALID_OBJECT" }],
+      dataRows: ALIAS_ROWS
+    }),
+    {}
+  );
+  assert.equal(errorRow.column_origins, null);
+  assert.equal(errorRow.column_origins_status, "unavailable");
+  assert.equal(errorRow.column_origins_reason, "describe_error:invalid_object");
+  assert.equal(errorRow.column_origins_detail, "Invalid object name '#tmp'.");
+
+  const thrown = await readOnly(createFakePool({ describeError: new Error("permission denied"), dataRows: ALIAS_ROWS }), {});
+  assert.equal(thrown.column_origins_reason, "describe_failed");
+
+  const unsupported = await readOnly(createFakePool({ describeRows: [], dataRows: ALIAS_ROWS }), { p: [1, 2] });
+  assert.equal(unsupported.column_origins_reason, "unsupported_param_type:p");
+
+  const empty = await readOnly(createFakePool({ describeRows: [], dataRows: ALIAS_ROWS }), {});
+  assert.equal(empty.column_origins_reason, "describe_empty");
+
+  const resolved = await readOnly(
+    createFakePool({
+      describeRows: [
+        { name: "tipo", source_schema: "dbo", source_table: "u", source_column: "cognome", is_hidden: false },
+        { name: "hidden_key", source_schema: "dbo", source_table: "u", source_column: "id", is_hidden: true }
+      ],
+      dataRows: ALIAS_ROWS
+    }),
+    {}
+  );
+  assert.equal(resolved.column_origins_status, "resolved");
+  assert.deepEqual(Object.keys(resolved.column_origins), ["tipo"]);
+});
+
+test("a describe error row masks aliased values and tells the client why", async () => {
+  let report;
+  const result = await readAndAnonymize(
+    createFakePool({
+      describeRows: [{ name: null, error_number: 11526, error_message: "could not be determined", error_type_desc: "CLR_PROCEDURE" }],
+      dataRows: ALIAS_ROWS
+    }),
+    {},
+    { onReport: r => { report = r; } }
+  );
+  assert.match(result.rows[0].tipo, /^TEXT_/);
+  assert.equal(result.anonymization_notes.length, 1);
+  assert.match(result.anonymization_notes[0], /describe_error:clr_procedure/);
+  assert.equal(result.anonymization_notes[0].includes("could not be determined"), false, "raw SQL Server text stays out of the response");
+  assert.equal(report.origins.status, "unavailable");
+  assert.equal(report.origins.detail, "could not be determined");
 });

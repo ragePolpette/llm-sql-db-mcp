@@ -48,6 +48,7 @@ const diagnosticSummarySchema = z.object({
   truncated: z.boolean(),
   anonymization_applied: z.boolean(),
   anonymization_provider: z.string(),
+  anonymization_notes: z.array(z.string()).optional(),
   column_names: z.array(z.string()),
   sample_rows: z.array(z.record(z.string(), z.unknown())),
   duration_ms: z.number().int().nonnegative()
@@ -192,6 +193,10 @@ export function registerFixedTools(server, handlers) {
         anonymization_applied: z.boolean(),
         anonymization_provider: z.string(),
         anonymization_mode: z.string(),
+        anonymization_notes: z
+          .array(z.string())
+          .optional()
+          .describe("Present when the result is more masked than usual, with the reason and how to avoid it."),
         columns: z.array(
           z.object({
             name: z.string(),

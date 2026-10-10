@@ -89,12 +89,18 @@ test("anonymizeQueryResult uses column origins but never returns them to the cli
       sql_text: "SELECT cognome AS tipo FROM dbo.u",
       max_result_bytes_applied: null,
       truncated: false,
-      column_origins: { tipo: { table: "u", column: "cognome" } }
+      column_origins: { tipo: { table: "u", column: "cognome" } },
+      column_origins_status: "resolved",
+      column_origins_reason: null,
+      column_origins_detail: null
     },
     providerConfig: { hashSalt: "salt-salt-salt", failOpen: false, timeoutMs: 1000, fieldIdentification: "heuristic" }
   });
   assert.match(result.rows[0].tipo, /^NAME_/);
-  assert.equal("column_origins" in result, false);
+  for (const key of ["column_origins", "column_origins_status", "column_origins_reason", "column_origins_detail"]) {
+    assert.equal(key in result, false, `${key} is internal`);
+  }
+  assert.equal("anonymization_notes" in result, false, "no note when origins are resolved");
 });
 
 test("resolveFailOpen is closed for missing or unknown environments and open only for known non-prod ones", () => {

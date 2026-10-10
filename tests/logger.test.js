@@ -155,6 +155,7 @@ test("anonymizer_decisions logs aggregate reasons at info and per-column detail 
     target_id: "prod-main",
     by_reason: { "heuristic:email": 2 },
     columns: [{ column: "email", reasons: { "heuristic:email": 2 } }],
+    origins: { status: "unavailable", reason: "describe_failed", detail: "Invalid column name 'secret_col'." },
     rows: [{ email: "secret@x.it" }]
   };
 
@@ -164,11 +165,15 @@ test("anonymizer_decisions logs aggregate reasons at info and per-column detail 
   assert.equal(infoEntry.event, "db.anonymizer_decisions");
   assert.deepEqual(infoEntry.payload.by_reason, { "heuristic:email": 2 });
   assert.equal(infoEntry.payload.columns, undefined);
+  assert.equal(infoEntry.payload.origins_status, "unavailable");
+  assert.equal(infoEntry.payload.origins_reason, "describe_failed");
+  assert.equal(infoOut.chunks[0].includes("secret_col"), false, "raw describe error is debug-only");
   assert.equal(infoOut.chunks[0].includes("secret@x.it"), false);
 
   const debugOut = createWritableMemoryStream();
   createLogger({ level: "debug", stdout: debugOut }).dbEvent("anonymizer_decisions", payload);
   const debugEntry = JSON.parse(debugOut.chunks[0]);
   assert.equal(debugEntry.payload.columns.length, 1);
+  assert.match(debugEntry.payload.origins_detail, /secret_col/);
   assert.equal(debugOut.chunks[0].includes("secret@x.it"), false);
 });

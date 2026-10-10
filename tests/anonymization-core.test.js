@@ -406,3 +406,43 @@ test("without column origins nothing is exempted by name and provider none is ig
   assert.match(row.Telefono, /^\+39\d{10}$/, "name heuristics still add masking");
   assert.ok(report.columns.every(column => column.derived), "the report marks every column as unverified");
 });
+
+test("computed 0/1/true/false columns pass, computed letters and alias heuristics do not", async () => {
+  let report;
+  const [first, second] = await anonymizeRows(
+    [
+      { is_cliente: "1", iniziale: "S", flag_nome: "1" },
+      { is_cliente: "0", iniziale: "N", flag_nome: "0" }
+    ],
+    BASE_CFG,
+    {
+      sqlText: "SELECT CASE WHEN x THEN '1' ELSE '0' END AS is_cliente, LEFT(cognome, 1) AS iniziale, ... AS flag_nome FROM dbo.t",
+      columnOrigins: { is_cliente: null, iniziale: null, flag_nome: null },
+      onReport: r => { report = r; }
+    }
+  );
+  assert.equal(first.is_cliente, "1");
+  assert.equal(second.is_cliente, "0");
+  assert.match(first.iniziale, /^TEXT_/, "single letters are not treated as flags");
+  assert.match(first.flag_nome, /^NAME_/, "a name heuristic on the alias still wins");
+  assert.equal(report.by_reason["safe:binary-flag"], 2);
+});
+
+test("KNOWN LIMITATION: non-string values derived from sensitive columns are returned in clear", async () => {
+  // Output anonymization cannot stop inference by a hostile caller: ASCII(SUBSTRING(cognome, n, 1)) or
+  // YEAR(data_nascita) are numbers, and numbers are never masked, so repeating the query rebuilds the
+  // value. The same holds for WHERE <sensitive column> ... with COUNT(*). See SECURITY.md (threat model):
+  // the mitigation is a DB login that can only read views without the sensitive columns.
+  // If this test starts failing because these values get masked, update SECURITY.md and README too.
+  const [row] = await anonymizeRows(
+    [{ x: 82, anno: 1980, n: 3 }],
+    BASE_CFG,
+    {
+      sqlText: "SELECT ASCII(SUBSTRING(cognome, 1, 1)) AS x, YEAR(data_nascita) AS anno, COUNT(*) AS n FROM dbo.u WHERE cognome LIKE 'R%'",
+      columnOrigins: { x: null, anno: null, n: null }
+    }
+  );
+  assert.equal(row.x, 82, "ASCII('R') leaks the first letter of the surname");
+  assert.equal(row.anno, 1980, "the birth year leaks");
+  assert.equal(row.n, 3, "COUNT(*) over a sensitive predicate leaks");
+});

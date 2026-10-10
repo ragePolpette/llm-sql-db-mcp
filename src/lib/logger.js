@@ -149,6 +149,10 @@ function redactDbPayload(event, payload, level) {
       tool: payload.tool ?? null,
       target_id: payload.target_id ?? null,
       by_reason: payload.by_reason ?? {},
+      origins_status: payload.origins?.status ?? null,
+      origins_reason: payload.origins?.reason ?? null,
+      // The raw SQL Server message may echo parts of the query: debug only.
+      origins_detail: level === "debug" ? payload.origins?.detail ?? null : undefined,
       columns: level === "debug" ? payload.columns ?? [] : undefined
     };
   }

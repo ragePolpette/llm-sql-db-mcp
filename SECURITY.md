@@ -33,7 +33,7 @@ Rischi che il progetto prova a mitigare:
 - query write o DDL non consentite inviate per errore o tramite client MCP mal configurato
 - accesso a target non permessi dal registry
 - uso improprio di target `prod`
-- esposizione di dati sensibili in result set dove il target richiede anonimizzazione
+- esposizione accidentale di dati sensibili in result set dove il target richiede anonimizzazione (non l'inferenza deliberata: vedi sotto)
 - leak accidentali nei log applicativi
 
 Rischi non coperti completamente:
@@ -41,6 +41,26 @@ Rischi non coperti completamente:
 - credenziali DB troppo permissive
 - esposizione del server su internet senza autenticazione o proxy adeguato
 - bypass completi del motore SQL tramite capability esterne al processo
+
+## Anonimizzazione: cosa protegge e cosa no
+
+L'anonimizzazione agisce sull'**output** di `db_read`: maschera i valori che il server riconosce come dati personali prima di restituirli al client.
+
+Protegge da:
+- **esposizione accidentale** di dati personali verso un client (tipicamente un LLM) che legge dati di produzione in buona fede: una `SELECT *`, una colonna di note, un alias che rinomina una colonna sensibile;
+- alias e colonne calcolate: l'origine delle colonne viene risolta tramite SQL Server e, se non si ottiene, nulla viene esentato in base al nome.
+
+**Non protegge da un chiamante ostile** che costruisce query per inferire i valori. Esempi che oggi funzionano e restituiscono dati in chiaro:
+- `SELECT ASCII(SUBSTRING(cognome, 1, 1)) AS x ...`, ripetuta per ogni posizione: i numeri non vengono mai mascherati, quindi si ricostruisce il cognome;
+- `SELECT YEAR(data_nascita) ...`, `DATEDIFF(...)`, `LEN(email)`: qualsiasi valore numerico derivato da una colonna sensibile;
+- `SELECT COUNT(*) ... WHERE cognome LIKE 'R%'`: un predicato su una colonna sensibile risponde sì/no, e con abbastanza query ricostruisce il valore.
+
+Filtrare l'output non può chiudere questi canali: l'inferenza va bloccata a monte, nei permessi del database. Un test (`KNOWN LIMITATION` in `tests/anonymization-core.test.js`) documenta il comportamento attuale.
+
+Se il client può essere ostile, o se un'esfiltrazione deliberata è un rischio da coprire:
+- usare per il target un **login SQL dedicato con permessi solo su viste** che non contengono le colonne sensibili (o le espongono già pseudonimizzate), senza `SELECT` sulle tabelle base;
+- in alternativa usare le funzionalità del database pensate per questo (ad esempio permessi a livello di colonna con `DENY SELECT` sulle colonne sensibili, Row-Level Security); il Dynamic Data Masking di SQL Server da solo non basta, perché è aggirabile con predicati e funzioni allo stesso modo;
+- considerare l'anonimizzazione del server come una seconda linea, non come il confine di sicurezza.
 
 ## Future Authentication Boundary
 
@@ -104,6 +124,7 @@ Uso sconsigliato o fuori scope:
 - dare accesso indiscriminato a client o agenti non affidabili
 - usare credenziali sysadmin o equivalenti
 - considerare i guard rail applicativi come sostituti dei permessi SQL
+- considerare l'anonimizzazione dell'output una difesa contro un client ostile: non lo e'
 - usare `ANON_FAIL_OPEN=true` come scorciatoia per target `prod`: su `environment=prod` il progetto deve restare fail-closed
 
 ## Vulnerability Reporting
