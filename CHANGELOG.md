@@ -12,6 +12,8 @@ Il formato segue in modo leggero [Keep a Changelog](https://keepachangelog.com/e
 - Driver reports `source_schema` for column origins (catalog keys are `schema.table.column`).
 
 ### Security
+- `db_read` on anonymized targets redacts data values echoed by SQL Server error messages (conversion, JSON, overflow, duplicate-key, driver JSON errors) in both the response and `db.query_failed` logs. Compile-time errors (invalid column, syntax, ...) are kept verbatim because they occur before any row is read; unknown error numbers are redacted. Targets without anonymization are unchanged.
+- SECURITY.md: login hardening checklist for anonymized targets (views in a separate schema, no base-table SELECT, no server/database state, no SHOWPLAN, `public`/`guest` review) with a T-SQL example and verification steps.
 - Documented the anonymization threat model (README, SECURITY.md): output anonymization covers accidental exposure, not inference by a hostile caller (`ASCII(SUBSTRING(...))`, `YEAR(...)`, `COUNT(*)` with predicates on sensitive columns). Recommended mitigation: a DB login restricted to views without sensitive columns. A `KNOWN LIMITATION` test pins the current behaviour.
 - Column-origin resolution now reads describe errors reported as rows by `sys.dm_exec_describe_first_result_set` (it usually reports errors that way rather than raising).
 

@@ -242,6 +242,8 @@ npm run anon:catalog -- set dbo.Ordini.Stato safe
 
 Output anonymization protects against **accidental exposure** of personal data to a client acting in good faith (for example an LLM reading production data). It does **not** protect against a hostile caller crafting queries to infer values: numbers derived from sensitive columns (`ASCII(SUBSTRING(cognome, 1, 1))`, `YEAR(data_nascita)`) are returned in clear, and predicates on sensitive columns (`COUNT(*) ... WHERE cognome LIKE 'R%'`) answer yes/no questions. Filtering output cannot close these channels.
 
-If the client may be hostile, give the target a dedicated SQL login that can only read views without the sensitive columns (or with them already pseudonymized), and treat anonymization as a second line of defense. Details in [SECURITY.md](./SECURITY.md).
+If the client may be hostile, give the target a dedicated SQL login that can only read views without the sensitive columns, and treat anonymization as a second line of defense. SECURITY.md has a hardening checklist with a T-SQL example and verification steps.
+
+On anonymized targets, SQL Server error messages are scrubbed of data values (for example `CAST(cognome AS int)` would otherwise echo the surname); compile-time errors are kept verbatim.
 
 When the server cannot verify column origins, the `db_read` result carries `anonymization_notes` explaining why more columns were masked and how to rewrite the query.
