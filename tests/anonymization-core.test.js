@@ -2,6 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { anonymizeRows, __anonymizationCoreTestUtils } from "../src/lib/anonymizer.js";
 
+// Column origins as the SQL Server driver reports them for plain, non-aliased columns. Name-based
+// exemptions only apply when origins are known; without them every column is treated as computed.
+function resolvedOrigins(...columns) {
+  return Object.fromEntries(columns.map(column => [column, { schema: "dbo", table: "t", column }]));
+}
+
 test("anonymizeRows preserves cf and partita iva while still masking real sensitive keys", async () => {
   const rows = await anonymizeRows(
     [
@@ -22,7 +28,8 @@ test("anonymizeRows preserves cf and partita iva while still masking real sensit
       timeoutMs: 5000,
       model: "",
       baseUrl: ""
-    }
+    },
+    { columnOrigins: resolvedOrigins("Id", "Email", "PartitaIva", "CodiceFiscale", "Telefono") }
   );
 
   assert.equal(rows[0].Id, 1);
@@ -49,7 +56,8 @@ test("anonymizeRows preserves technical flags and generated references", async (
       timeoutMs: 5000,
       model: "",
       baseUrl: ""
-    }
+    },
+    { columnOrigins: resolvedOrigins("Estero", "numrif") }
   );
 
   assert.equal(rows[0].Estero, "0");
@@ -72,7 +80,8 @@ test("anonymizeRows preserves structured operational codes", async () => {
       timeoutMs: 5000,
       model: "",
       baseUrl: ""
-    }
+    },
+    { columnOrigins: resolvedOrigins("codice_ordine") }
   );
 
   assert.equal(rows[0].codice_ordine, "OQ00000010");
@@ -98,6 +107,7 @@ test("anonymizeRows uses LM classification and keeps deterministic output", asyn
     },
     {
       sqlText: "SELECT Conto, Descrizione FROM dbo.DocPdc",
+      columnOrigins: resolvedOrigins("Conto", "Descrizione"),
       fetchImpl: async () => ({
         ok: true,
         async json() {
@@ -225,6 +235,7 @@ test("a low-confidence none is ignored, a high-confidence none is honoured", asy
     llmCfg(),
     {
       sqlText: "SELECT Sicuro, Dubbio FROM dbo.t",
+      columnOrigins: resolvedOrigins("Sicuro", "Dubbio"),
       fetchImpl: llmFetch({
         Sicuro: { kind: "none", confidence: 0.99 },
         Dubbio: { kind: "none", confidence: 0.3 }
@@ -239,8 +250,11 @@ test("aliasing a sensitive column to a technical name does not bypass masking", 
   const sqlText = "SELECT cognome AS tipo, nome AS stato, email AS id, COUNT(*) AS total FROM dbo.u";
   const rows = [{ tipo: "Rossi", stato: "Mario", id: "mario@x.it", total: 7 }];
 
-  const [legacy] = await anonymizeRows(rows, BASE_CFG, { sqlText });
-  assert.equal(legacy.tipo, "Rossi", "without origins the legacy name-based exemption still applies");
+  const [unresolved] = await anonymizeRows(rows, BASE_CFG, { sqlText });
+  assert.match(unresolved.tipo, /^TEXT_/, "without origins an alias is never trusted");
+  assert.match(unresolved.stato, /^TEXT_/);
+  assert.match(unresolved.id, /^TEXT_/);
+  assert.equal(unresolved.total, 7);
 
   const [row] = await anonymizeRows(rows, BASE_CFG, {
     sqlText,
@@ -293,7 +307,8 @@ test("a provider none verdict is ignored for computed columns", async () => {
 test("emails and valid IBANs are masked even in technical columns", async () => {
   const [row] = await anonymizeRows(
     [{ id: "mario@x.it", stato: "IT60X0542811101000000123456", tipo: "IT60X0542811101000000123457" }],
-    BASE_CFG
+    BASE_CFG,
+    { columnOrigins: resolvedOrigins("id", "stato", "tipo") }
   );
   assert.match(row.id, /@example\.invalid$/);
   assert.match(row.stato, /^IBAN_/);
@@ -315,7 +330,7 @@ test("onReport explains every decision per column and never contains values", as
   await anonymizeRows(
     [{ email: "mario@x.it", Estero: "0", tipo: "Rossi", ignoto: "abc", importo: 12.5 }],
     BASE_CFG,
-    { sqlText: "SELECT * FROM dbo.t", onReport: r => { report = r; } }
+    { sqlText: "SELECT * FROM dbo.t", columnOrigins: resolvedOrigins("email", "Estero", "tipo", "ignoto", "importo"), onReport: r => { report = r; } }
   );
   const reasons = Object.fromEntries(report.columns.map(c => [c.column, Object.keys(c.reasons)[0]]));
   assert.equal(reasons.email, "heuristic:email");
@@ -350,6 +365,7 @@ test("trust=corroborated rejects a provider none verdict when the column contain
     llmCfg(),
     {
       sqlText: "SELECT Contatto FROM dbo.t",
+      columnOrigins: resolvedOrigins("Contatto"),
       fetchImpl: llmFetch({ Contatto: "none" }),
       onReport: r => { report = r; }
     }
@@ -365,8 +381,28 @@ test("trust=corroborated still honours a clean confident none and says so in the
   const [row] = await anonymizeRows(
     [{ Causale: "Fattura gennaio" }],
     llmCfg(),
-    { sqlText: "SELECT Causale FROM dbo.t", fetchImpl: llmFetch({ Causale: "none" }), onReport: r => { report = r; } }
+    { sqlText: "SELECT Causale FROM dbo.t", columnOrigins: resolvedOrigins("Causale"), fetchImpl: llmFetch({ Causale: "none" }), onReport: r => { report = r; } }
   );
   assert.equal(row.Causale, "Fattura gennaio");
   assert.equal(report.by_reason["provider-none"], 1);
+});
+
+test("without column origins nothing is exempted by name and provider none is ignored", async () => {
+  __anonymizationCoreTestUtils.resetKindCache();
+  let report;
+  const [row] = await anonymizeRows(
+    [{ tipo: "Rossi", stato: "Mario", Causale: "Fattura gennaio", id: 42, Telefono: "+39 333 1234567" }],
+    llmCfg(),
+    {
+      sqlText: "SELECT cognome AS tipo, nome AS stato, Causale, id, Telefono FROM dbo.t WHERE x = @p",
+      fetchImpl: llmFetch({ tipo: "none", stato: "none", Causale: "none" }),
+      onReport: r => { report = r; }
+    }
+  );
+  assert.match(row.tipo, /^TEXT_/);
+  assert.match(row.stato, /^TEXT_/);
+  assert.match(row.Causale, /^TEXT_/, "a provider none is not trusted when the alias cannot be verified");
+  assert.equal(row.id, 42, "non-string values are left as they are");
+  assert.match(row.Telefono, /^\+39\d{10}$/, "name heuristics still add masking");
+  assert.ok(report.columns.every(column => column.derived), "the report marks every column as unverified");
 });
