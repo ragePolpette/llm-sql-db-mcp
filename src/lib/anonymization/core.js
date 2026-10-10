@@ -202,6 +202,13 @@ function isFlagLikeProfile(profile) {
   });
 }
 
+const BINARY_FLAG_LITERALS = new Set(["0", "1", "true", "false"]);
+
+function isBinaryFlagProfile(profile) {
+  if (!profile || profile.values.length === 0) return false;
+  return profile.values.every(value => BINARY_FLAG_LITERALS.has(value.toLowerCase()));
+}
+
 function isStructuredTechnicalCodeProfile(normalizedKey, profile) {
   if (!profile || profile.values.length === 0) return false;
   const tokens = tokenSetFromKey(normalizedKey);
@@ -502,6 +509,12 @@ function resolveKindForValue(key, value, fieldKindMap, cacheScope = GLOBAL_CACHE
   // Computed columns get no "technical name" exemption: `SELECT cognome AS tipo` must stay masked.
   if (!derived && isTechnicalSafeColumn(key, value, columnProfiles, profileKey)) {
     return { kind: NONE_KIND, reason: "safe:technical" };
+  }
+  // A computed column holding only 0/1/true/false carries one bit per row. That bit is already
+  // obtainable through WHERE + COUNT(*), so returning it opens no new channel. Letters (S/N/Y/T/F)
+  // are excluded on purpose: LEFT(cognome, 1) must not pass as a flag.
+  if (derived && isBinaryFlagProfile(profile)) {
+    return { kind: NONE_KIND, reason: "safe:binary-flag" };
   }
   if (typeof value === "string" && value.trim()) {
     // Keep the provider-verdict explanation when that is why the column ended up masked.

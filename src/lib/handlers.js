@@ -132,6 +132,7 @@ function createDiagnosticSummary({ target, databaseTarget, ticketKey, result }) 
     truncated: result?.truncated ?? false,
     anonymization_applied: result?.anonymization_applied ?? false,
     anonymization_provider: result?.anonymization_provider ?? 'none',
+    anonymization_notes: Array.isArray(result?.anonymization_notes) ? result.anonymization_notes : [],
     column_names: columns.map(column => column.name),
     sample_rows: rows.slice(0, 3),
     duration_ms: result?.duration_ms ?? 0
@@ -344,7 +345,8 @@ export function createHandlers({
                     tool: "db_read",
                     target_id: target.target_id,
                     by_reason: report.by_reason,
-                    columns: report.columns
+                    columns: report.columns,
+                    origins: report.origins
                   })
               });
               logDbEvent?.("anonymizer_done", {

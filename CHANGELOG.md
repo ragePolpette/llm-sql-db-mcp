@@ -12,6 +12,13 @@ Il formato segue in modo leggero [Keep a Changelog](https://keepachangelog.com/e
 - Driver reports `source_schema` for column origins (catalog keys are `schema.table.column`).
 
 ### Security
+- Documented the anonymization threat model (README, SECURITY.md): output anonymization covers accidental exposure, not inference by a hostile caller (`ASCII(SUBSTRING(...))`, `YEAR(...)`, `COUNT(*)` with predicates on sensitive columns). Recommended mitigation: a DB login restricted to views without sensitive columns. A `KNOWN LIMITATION` test pins the current behaviour.
+- Column-origin resolution now reads describe errors reported as rows by `sys.dm_exec_describe_first_result_set` (it usually reports errors that way rather than raising).
+
+### Added
+- `db.anonymizer_decisions` reports `origins_status` / `origins_reason` (raw SQL Server message only at `debug`).
+- `db_read` (and the `run_diagnostic_query` summary) returns `anonymization_notes` when column origins are unavailable, with the reason and how to rewrite the query.
+- Computed columns whose values are only `0`/`1`/`true`/`false` are returned in clear (`safe:binary-flag`); single letters are still masked.
 - Anonymization: when column origins cannot be resolved (a `null` SQL parameter, temp tables, unsupported parameter types, permission or SQL Server errors) every column is now treated as computed: nothing is exempted by name and provider "none" verdicts are ignored. Previously the anonymizer fell back to trusting output names, so `SELECT cognome AS tipo ... WHERE x = @p` with `p = null` returned names in clear. `null` parameters are also declared as `nvarchar(max)` so they no longer prevent metadata resolution.
 - Anonymization (phase A): per-column decision reasons are logged as `db.anonymizer_decisions` (aggregate counts at `info`, per-column detail at `debug`, never values).
 - Anonymization: new per-target `anonymization_trust` (`corroborated` default, `strict`; env override `TARGET_<ID>_ANONYMIZATION_TRUST`). `strict` never accepts a provider `none` verdict on unknown columns; `corroborated` also rejects it when the column visibly contains e-mails, IBANs or phone numbers.

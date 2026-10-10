@@ -69,6 +69,49 @@ function buildAnonymizerConfig(target, providerConfig) {
   };
 }
 
+function splitOriginFields(queryResult) {
+  const {
+    column_origins: columnOrigins,
+    column_origins_status: status,
+    column_origins_reason: reason,
+    column_origins_detail: detail,
+    ...publicQueryResult
+  } = queryResult;
+  const resolved = status === "resolved" && columnOrigins && typeof columnOrigins === "object";
+  return {
+    publicQueryResult,
+    columnOrigins: resolved ? columnOrigins : undefined,
+    origins: {
+      status: resolved ? "resolved" : "unavailable",
+      reason: resolved ? null : reason ?? "not_provided",
+      detail: resolved ? null : detail ?? null
+    }
+  };
+}
+
+function describeOriginReason(reason) {
+  if (reason?.startsWith("unsupported_param_type:")) {
+    const name = reason.slice("unsupported_param_type:".length);
+    return `parameter @${name} has a type that cannot be described; pass a string, number, boolean, date or null`;
+  }
+  if (reason?.startsWith("describe_error") || reason === "describe_failed") {
+    return "SQL Server could not describe the result set (for example temporary objects or constructs it cannot compile ahead of time); simplify the query";
+  }
+  if (reason === "describe_empty") {
+    return "SQL Server returned no result-set description for this query";
+  }
+  return "column metadata was not available";
+}
+
+// Tells the calling client why its result is more masked than usual, so it can rewrite the query.
+export function buildAnonymizationNotes(origins) {
+  if (origins.status === "resolved") return [];
+  return [
+    `Column origins unavailable (${origins.reason}): ${describeOriginReason(origins.reason)}. ` +
+      "Aliases cannot be verified, so every text column is masked."
+  ];
+}
+
 export async function anonymizeQueryResult({
   target,
   queryResult,
@@ -78,7 +121,7 @@ export async function anonymizeQueryResult({
 }) {
   if (!target.anonymization_enabled) {
     return {
-      ...queryResult,
+      ...splitOriginFields(queryResult).publicQueryResult,
       anonymization_applied: false,
       anonymization_provider: "none",
       anonymization_mode: target.anonymization_mode
@@ -86,8 +129,9 @@ export async function anonymizeQueryResult({
   }
 
   // Column origins are an internal classification input: never forward schema details to the client.
-  const { column_origins: columnOrigins, ...publicQueryResult } = queryResult;
+  const { publicQueryResult, columnOrigins, origins } = splitOriginFields(queryResult);
   queryResult = publicQueryResult;
+  const notes = buildAnonymizationNotes(origins);
 
   const anonymizerConfig = buildAnonymizerConfig(target, providerConfig);
   const maskedRows = await anonymizeRows(queryResult.rows, anonymizerConfig, {
@@ -95,7 +139,7 @@ export async function anonymizeQueryResult({
     columnOrigins,
     catalog: getCatalog(providerConfig.catalogPath),
     targetId: target.target_id,
-    onReport,
+    onReport: typeof onReport === "function" ? report => onReport({ ...report, origins }) : undefined,
     fetchImpl
   });
   const boundedRows = clampRowsToByteLimit(maskedRows, queryResult.max_result_bytes_applied);
@@ -108,7 +152,8 @@ export async function anonymizeQueryResult({
     truncated: queryResult.truncated || boundedRows.length < maskedRows.length,
     anonymization_applied: true,
     anonymization_provider: target.llm_provider,
-    anonymization_mode: normalizeMode(target.anonymization_mode)
+    anonymization_mode: normalizeMode(target.anonymization_mode),
+    ...(notes.length > 0 ? { anonymization_notes: notes } : {})
   };
 }
 
