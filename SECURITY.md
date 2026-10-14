@@ -71,6 +71,53 @@ If the client may be hostile, or deliberate exfiltration is a risk to cover:
 
 More detail: [docs/ANONYMIZATION.md](./docs/ANONYMIZATION.md).
 
+## Login hardening for anonymized targets
+
+If the client may be hostile, the real boundary is the SQL login of the target, not the anonymization layer. Minimum checklist for the login referenced by `connection_env_var` of an anonymized target:
+
+1. **One dedicated login per target**, used only by this server.
+2. **Views only, in a separate schema.** Views expose only non-sensitive columns (or surrogate keys for joins). The separate schema matters because a `DENY` on the `dbo` schema also blocks views that live in `dbo`. When both schemas have the same owner (typically `dbo`), ownership chaining lets the views work without permissions on the base tables.
+3. **No `SELECT` on base tables**: never the `db_datareader` role (it grants `SELECT` on everything) and an explicit `DENY` on the schema that holds the tables.
+4. **No home-made pseudonyms in views**: an unsalted `HASHBYTES` over email, phone or tax code is reversible by dictionary. Omit the column or expose a surrogate key instead.
+5. **No server or database state**: do not grant `VIEW SERVER STATE` / `VIEW DATABASE STATE` (nor the `... PERFORMANCE STATE` variants of SQL Server 2022). DMVs such as `sys.dm_exec_sql_text` show the queries of other sessions together with their literals.
+6. **No `SHOWPLAN`**: the server does not need it and the plan contains compiled parameter values.
+7. **No `EXECUTE` on functions** that read sensitive columns.
+8. **Review the `public` role and the `guest` user**: no permissions on tables with personal data, `guest` disabled in the databases of the server.
+9. **No user for this login in other databases** on the same server.
+
+Example (adapt to your schema):
+
+```sql
+-- server
+CREATE LOGIN mcp_prod_reader WITH PASSWORD = '<secret>', CHECK_POLICY = ON;
+
+-- database
+CREATE USER mcp_prod_reader FOR LOGIN mcp_prod_reader;
+GO
+CREATE SCHEMA mcp AUTHORIZATION dbo;
+GO
+CREATE VIEW mcp.Clienti AS
+  SELECT Id, Stato, Provincia, DataCreazione   -- no Nome, Cognome, Email, Telefono, Note
+  FROM dbo.Clienti;
+GO
+GRANT SELECT ON SCHEMA::mcp TO mcp_prod_reader;
+DENY SELECT ON SCHEMA::dbo TO mcp_prod_reader;
+DENY VIEW DATABASE STATE TO mcp_prod_reader;
+DENY SHOWPLAN TO mcp_prod_reader;
+```
+
+Verification, run by an administrator:
+
+```sql
+EXECUTE AS USER = 'mcp_prod_reader';
+SELECT TOP (1) Cognome FROM dbo.Clienti;                -- must fail
+SELECT TOP (1) * FROM mcp.Clienti;                      -- must work
+SELECT * FROM fn_my_permissions(NULL, 'DATABASE');      -- no unexpected SELECT / VIEW STATE
+REVERT;
+```
+
+With such a login, server-side anonymization stays active as a second line: it covers view misconfigurations and accidental exposure. In addition, on anonymized targets SQL Server error messages are scrubbed of the values they may contain (for example `Conversion failed when converting the nvarchar value '...'`); compile-time errors, which happen before any row is read, are kept intact so the query can be corrected.
+
 ## Future authentication boundary
 
 The current runtime does not implement strong authentication because the intended deployment is local or limited to a team.

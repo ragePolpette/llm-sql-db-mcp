@@ -23,4 +23,6 @@ Output anonymization protects against accidental exposure of personal data to a 
 
 If the client may be hostile, give the target a dedicated SQL login that can only read views without the sensitive columns, or with them already pseudonymized, and treat anonymization as a second line of defense. See [SECURITY.md](../SECURITY.md).
 
+On anonymized targets, SQL Server error messages are scrubbed of data values (for example `CAST(cognome AS int)` would otherwise echo the surname). Compile-time errors, which happen before any row is read, are kept verbatim so the query can still be fixed.
+
 When the server cannot verify column origins, the `db_read` result carries `anonymization_notes` explaining why more columns were masked and how to rewrite the query.

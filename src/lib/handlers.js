@@ -5,6 +5,7 @@ import {
   toSafeTargetSummary
 } from "./policy-engine.js";
 import { assertReadSafeSql, assertWriteSafeSql } from "./sql-guard.js";
+import { sanitizeSqlErrorMessage } from "./sql-error-sanitizer.js";
 
 function createJsonResult(payload) {
   return {
@@ -392,12 +393,17 @@ export function createHandlers({
           ...finalResult
         });
       } catch (error) {
+        // On anonymized targets SQL Server runtime errors may echo data values: redact them in both
+        // the response and the logs (see sql-error-sanitizer.js).
+        const message = policy.anonymization_required
+          ? sanitizeSqlErrorMessage(error).message
+          : error.message;
         logDbEvent?.("query_failed", {
           tool: "db_read",
           target_id: target.target_id,
-          error: error.message
+          error: message
         });
-        return createErrorResult(error.message, {
+        return createErrorResult(message, {
           code: "db_read_failed",
           target_id: targetId,
           tool_name: "db_read"
