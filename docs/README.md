@@ -1,32 +1,18 @@
 # Docs Index
 
-Questa cartella contiene solo documentazione pubblica e mantenuta.
+This directory contains public, maintained documentation only.
 
-Obiettivo:
-- tenere nel repo documenti utili a uso, review e manutenzione del progetto
-- evitare handoff operativi temporanei, prompt interni o note effimere che invecchiano male
+- [ANONYMIZATION.md](./ANONYMIZATION.md): column catalog workflow and the anonymization threat model
+- [AUTH_FUTURE_INTEGRATION.md](./AUTH_FUTURE_INTEGRATION.md): where optional authentication would attach without changing the query engine or MCP surface
+- [VERSIONING_POLICY.md](./VERSIONING_POLICY.md): versioning rules for releases, the MCP contract, and the target registry schema
+- [../CHANGELOG.md](../CHANGELOG.md): changelog with an `Unreleased` section and the `0.1.0` baseline
 
-## Documenti Correnti
+## Inclusion criteria
 
-- [PRODUCT_ROADMAP_CHECKLIST.md](./PRODUCT_ROADMAP_CHECKLIST.md): roadmap pragmatica del repo, checklist di hardening e tracking degli step completati
-- [AUTH_FUTURE_INTEGRATION.md](./AUTH_FUTURE_INTEGRATION.md): punto di integrazione per auth opzionale futura senza cambiare query engine o surface MCP
-- [VERSIONING_POLICY.md](./VERSIONING_POLICY.md): regole semplici per versionare release pubblica, contract MCP e schema del target registry
-- [../CHANGELOG.md](../CHANGELOG.md): changelog minimale del prodotto con sezione `Unreleased` e baseline `0.1.0`
-- [RUNTIME_INTEGRATION_NOTES.md](./RUNTIME_INTEGRATION_NOTES.md): decisione esplicita sul non introdurre un `Dockerfile` ora e boundary futuro per control plane esterno
+A document belongs in `docs/` if it:
 
-## Criterio Di Inclusione
+- serves users or contributors of the repository
+- describes architecture, security, or real operations
+- stays useful beyond a single work cycle
 
-Un documento entra in `docs/` se:
-- serve a utenti o contributori del repo
-- descrive roadmap, architettura, sicurezza o operativita' reale
-- resta utile anche dopo il singolo ciclo di lavoro
-
-Un documento non dovrebbe stare qui se:
-- e' un prompt di lavoro temporaneo
-- e' un handoff tra agenti o sessioni
-- contiene dettagli operativi usa-e-getta
-- duplica contenuti che stanno meglio in `README.md`, `SECURITY.md` o `CONTRIBUTING.md`
-
-## Nota Sul Repo Pubblico
-
-Questo repository punta a essere leggibile come portfolio pubblico. Per questo i documenti in `docs/` devono essere pochi, chiari e mantenuti, non un dump di materiale interno.
+A document does not belong here if it is a temporary working prompt, a handoff between sessions, throwaway operational detail, or a duplicate of content that fits better in `README.md`, `SECURITY.md`, or `CONTRIBUTING.md`.

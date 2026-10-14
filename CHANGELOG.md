@@ -1,8 +1,8 @@
 # Changelog
 
-Tutte le modifiche rilevanti a questo progetto saranno documentate qui.
+All notable changes to this project are documented in this file.
 
-Il formato segue in modo leggero [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) e la policy di versioning del repo e' descritta in [docs/VERSIONING_POLICY.md](./docs/VERSIONING_POLICY.md).
+The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The versioning policy is described in [docs/VERSIONING_POLICY.md](./docs/VERSIONING_POLICY.md).
 
 ## [Unreleased]
 
@@ -34,12 +34,12 @@ Il formato segue in modo leggero [Keep a Changelog](https://keepachangelog.com/e
 ## [0.1.0] - 2026-03-27
 
 ### Added
-- target registry dinamico con source of truth file-based e policy target-aware
-- guard rail rigidi per target `environment=prod`
-- supporto a anonimizzazione configurabile per target
-- documentazione pubblica minima di prodotto: `README`, `SECURITY`, `CONTRIBUTING`, roadmap e note operative
+- dynamic target registry as a file-based source of truth with target-aware policy
+- strict guard rails for `environment=prod` targets
+- configurable per-target anonymization
+- minimal public product documentation: `README`, `SECURITY`, `CONTRIBUTING`, roadmap, and operational notes
 
 ### Changed
-- logging runtime ridotto a metadati sicuri con livelli espliciti, `request_id` e formato configurabile
-- lifecycle del server con shutdown pool SQL, timeout DB, readiness separata e diagnostica non ambigua
-- suite di test ampliata su guard rail SQL, registry dinamico e invarianti di sicurezza ragionevoli
+- runtime logging reduced to safe metadata with explicit levels, `request_id`, and a configurable format
+- server lifecycle with SQL pool shutdown, DB timeouts, separate readiness, and unambiguous diagnostics
+- test suite extended to cover SQL guard rails, the dynamic registry, and reasonable security invariants

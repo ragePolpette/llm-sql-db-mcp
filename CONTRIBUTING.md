@@ -1,97 +1,118 @@
 # Contributing
 
-Grazie per voler contribuire a `llm-sql-db-mcp`.
+Thank you for contributing to `llm-sql-db-mcp`.
 
-Il progetto ha un target intenzionale preciso:
-- tool locale o team limitato
-- non internet-facing
-- hardening pragmatico
-- surface MCP piccola e prevedibile
+The project has a deliberate target:
 
-Le contributioni migliori rafforzano questi obiettivi invece di allargare il perimetro in modo casuale.
+- local or small-team tool
+- not internet-facing
+- pragmatic hardening
+- a small, predictable MCP surface
+
+The best contributions strengthen these goals instead of widening the perimeter at random.
 
 ## Workflow
 
-Workflow richiesto per ogni modifica:
-1. creare un branch feature dedicato da `main`
-2. implementare il cambiamento in modo mirato
-3. eseguire i check e i test pertinenti
-4. push del branch
-5. aprire una PR
-6. fare merge solo dopo verifica del diff
+Required for every change:
 
-Pattern consigliati per il naming dei branch:
-- `feature/p0-redacted-logging`
-- `feature/p1-security-docs`
-- `feature/p1-contributing-license`
+1. create a dedicated branch from `main`
+2. implement the change in a focused way
+3. run the relevant checks and tests
+4. push the branch
+5. open a pull request
+6. merge only after the diff has been reviewed
+
+Suggested branch naming patterns:
+
+- `feature/redacted-logging`
+- `feature/security-docs`
 - `fix/sql-guard-cte-parse`
 
-## Change Scope
+## Development
 
-Preferire PR piccole e leggibili:
-- una responsabilita' chiara per PR
-- niente refactor larghi senza necessita' reale
-- niente riscritture del query engine salvo bug o incoerenze concrete
-- niente cambi di comportamento impliciti sui target `prod`
+Requires Node.js 22 or later.
 
-## Safety Rules
+```bash
+npm ci
+npm run check
+npm test
+```
 
-Regole da non violare:
-- non committare secret, connection string, token o password
-- non usare `.env` del repo per secret runtime
-- non indebolire i fence dei target `environment=prod`
-- non trasformare il server in un servizio internet-facing "per comodita'"
-- non introdurre logging di SQL raw, parametri raw o row payload di default
+Tests use synthetic data and do not need a SQL Server instance. CI runs `npm run check` and `npm test` on pushes to `main` and on pull requests.
 
-Se una modifica tocca policy, anonimizzazione, registry target o target `prod`, la PR deve spiegarlo in modo esplicito.
+## Change scope
 
-## Testing Expectations
+Prefer small, readable pull requests:
 
-Prima di aprire una PR:
-- eseguire `npm run check`
-- eseguire `npm test` se la modifica tocca runtime, handler, policy, registry, driver o guard rail
-- per modifiche solo documentali, dichiarare esplicitamente che non sono stati eseguiti test
+- one clear responsibility per PR
+- no broad refactors without real need
+- no rewrites of the query engine except for concrete bugs or inconsistencies
+- no implicit behavior changes on `prod` targets
 
-Se aggiungi o cambi comportamento:
-- aggiornare i test esistenti quando possibile
-- evitare fix senza copertura minima sui casi critici
+## Safety rules
 
-## Documentation Expectations
+Rules not to be violated:
 
-Aggiornare la documentazione quando cambia uno di questi aspetti:
-- scope del prodotto
-- configurazione runtime
-- contract dei tool MCP
-- target registry
-- policy o limiti di sicurezza
+- do not commit secrets, connection strings, tokens, or passwords
+- do not use the repository `.env` for runtime secrets
+- do not weaken the fences on `environment=prod` targets
+- do not turn the server into an internet-facing service for convenience
+- do not introduce logging of raw SQL, raw parameters, or row payloads by default
 
-I file principali da tenere coerenti sono:
+If a change touches policy, anonymization, the target registry, or `prod` targets, the PR must say so explicitly.
+
+## Testing expectations
+
+Before opening a PR:
+
+- run `npm run check`
+- run `npm test` if the change touches runtime, handlers, policy, registry, driver, or guard rails
+- for documentation-only changes, state explicitly that tests were not run
+
+When adding or changing behavior:
+
+- update existing tests where possible
+- avoid fixes without minimal coverage of the critical cases
+
+## Documentation expectations
+
+Update the documentation when any of these change:
+
+- product scope
+- runtime configuration
+- the MCP tool contract
+- the target registry
+- policy or security limits
+
+Main files to keep consistent:
+
 - [README.md](./README.md)
 - [SECURITY.md](./SECURITY.md)
 
-Nota:
+## Pull request notes
 
-## Pull Request Notes
+A good PR includes:
 
-Una buona PR dovrebbe includere:
-- summary breve del cambiamento
-- motivazione tecnica
-- testing eseguito oppure nota `documentation-only`
-- eventuali rischi residui
+- a short summary of the change
+- the technical motivation
+- the testing performed, or a `documentation-only` note
+- any residual risks
 
-Evitare PR che mischiano:
+Avoid PRs that mix:
+
 - hardening
-- nuove feature
-- refactor strutturali
-- pulizia cosmetica non correlata
+- new features
+- structural refactors
+- unrelated cosmetic cleanup
 
-## Out Of Scope Contributions
+## Out-of-scope contributions
 
-Contributi che oggi non sono prioritari:
-- supporto cloud-first
+Not currently a priority:
+
+- cloud-first support
 - multi-tenancy
-- autenticazione enterprise completa
-- supporto generico a molti database senza un piano chiaro
-- UI o control plane incorporati in questo repo
+- full enterprise authentication
+- generic support for many databases without a clear plan
+- an embedded UI or control plane in this repository
 
-Se vuoi proporre qualcosa di grosso o fuori scope, apri prima una issue o una PR di design minima.
+For anything large or out of scope, open an issue or a minimal design PR first.

@@ -2,145 +2,155 @@
 
 ## Scope
 
-`llm-sql-db-mcp` e' progettato per:
-- uso locale
-- rete fidata limitata
-- team ristretto o business unit limitata
+`llm-sql-db-mcp` is designed for:
 
-Non e' progettato per:
-- esposizione pubblica su internet
+- local use
+- a limited trusted network
+- a small team or a limited business unit
+
+It is not designed for:
+
+- public exposure on the internet
 - multi-tenancy
-- deployment aperto senza hardening aggiuntivo
+- open deployment without additional hardening
 
-Questo file descrive il modello di sicurezza attuale del progetto, non una promessa di copertura totale.
+This file describes the current security model of the project. It is not a promise of complete coverage.
 
-## Security Goals
+## Security goals
 
-Gli obiettivi pratici del progetto sono:
-- ridurre il rischio di query dannose o incoerenti tramite tool surface fissa e policy target-aware
-- evitare esposizione accidentale di secret o payload sensibili nei log
-- mantenere fence rigide sui target `environment=prod`
-- separare la configurazione dei target dalla logica del client MCP
+- reduce the risk of harmful or inconsistent queries through a fixed tool surface and target-aware policy
+- avoid accidental exposure of secrets or sensitive payloads in logs
+- keep strict fences on `environment=prod` targets
+- separate target configuration from the MCP client logic
 
-## Threat Model Light
+## Threat model
 
-Assunzioni:
-- il processo gira su una macchina controllata oppure su una rete interna fidata
-- l'operatore del server controlla runtime env, file di registry e credenziali DB
-- il database resta il boundary finale di autorizzazione attraverso permessi minimi lato credenziali
+Assumptions:
 
-Rischi che il progetto prova a mitigare:
-- query write o DDL non consentite inviate per errore o tramite client MCP mal configurato
-- accesso a target non permessi dal registry
-- uso improprio di target `prod`
-- esposizione accidentale di dati sensibili in result set dove il target richiede anonimizzazione (non l'inferenza deliberata: vedi sotto)
-- leak accidentali nei log applicativi
+- the process runs on a controlled machine or a trusted internal network
+- the server operator controls the runtime environment, the registry file, and the DB credentials
+- the database remains the final authorization boundary through least-privilege credentials
 
-Rischi non coperti completamente:
-- host compromesso
-- credenziali DB troppo permissive
-- esposizione del server su internet senza autenticazione o proxy adeguato
-- bypass completi del motore SQL tramite capability esterne al processo
+Risks the project tries to mitigate:
 
-## Anonimizzazione: cosa protegge e cosa no
+- write or DDL queries that are not allowed, sent by mistake or by a misconfigured MCP client
+- access to targets not permitted by the registry
+- improper use of `prod` targets
+- accidental exposure of sensitive data in result sets where the target requires anonymization (not deliberate inference, see below)
+- accidental leaks in application logs
 
-L'anonimizzazione agisce sull'**output** di `db_read`: maschera i valori che il server riconosce come dati personali prima di restituirli al client.
+Risks not fully covered:
 
-Protegge da:
-- **esposizione accidentale** di dati personali verso un client (tipicamente un LLM) che legge dati di produzione in buona fede: una `SELECT *`, una colonna di note, un alias che rinomina una colonna sensibile;
-- alias e colonne calcolate: l'origine delle colonne viene risolta tramite SQL Server e, se non si ottiene, nulla viene esentato in base al nome.
+- a compromised host
+- overly permissive DB credentials
+- exposure of the server on the internet without authentication or a suitable proxy
+- complete bypasses of the SQL engine through capabilities outside the process
 
-**Non protegge da un chiamante ostile** che costruisce query per inferire i valori. Esempi che oggi funzionano e restituiscono dati in chiaro:
-- `SELECT ASCII(SUBSTRING(cognome, 1, 1)) AS x ...`, ripetuta per ogni posizione: i numeri non vengono mai mascherati, quindi si ricostruisce il cognome;
-- `SELECT YEAR(data_nascita) ...`, `DATEDIFF(...)`, `LEN(email)`: qualsiasi valore numerico derivato da una colonna sensibile;
-- `SELECT COUNT(*) ... WHERE cognome LIKE 'R%'`: un predicato su una colonna sensibile risponde sì/no, e con abbastanza query ricostruisce il valore.
+## Anonymization: what it protects and what it does not
 
-Filtrare l'output non può chiudere questi canali: l'inferenza va bloccata a monte, nei permessi del database. Un test (`KNOWN LIMITATION` in `tests/anonymization-core.test.js`) documenta il comportamento attuale.
+Anonymization acts on the output of `db_read`: it masks values the server recognizes as personal data before returning them to the client.
 
-Se il client può essere ostile, o se un'esfiltrazione deliberata è un rischio da coprire:
-- usare per il target un **login SQL dedicato con permessi solo su viste** che non contengono le colonne sensibili (o le espongono già pseudonimizzate), senza `SELECT` sulle tabelle base;
-- in alternativa usare le funzionalità del database pensate per questo (ad esempio permessi a livello di colonna con `DENY SELECT` sulle colonne sensibili, Row-Level Security); il Dynamic Data Masking di SQL Server da solo non basta, perché è aggirabile con predicati e funzioni allo stesso modo;
-- considerare l'anonimizzazione del server come una seconda linea, non come il confine di sicurezza.
+It protects against:
 
-## Future Authentication Boundary
+- accidental exposure of personal data to a client (typically an LLM) reading production data in good faith: a `SELECT *`, a notes column, an alias that renames a sensitive column
+- aliases and computed columns: column origins are resolved through SQL Server and, if that fails, nothing is exempted based on its name
 
-Il runtime attuale non implementa auth forte perche' il target operativo resta locale o team-limitato.
+It does not protect against a hostile caller crafting queries to infer values. Examples that currently work and return data in clear:
 
-La direzione prevista, se il repo dovesse salire di livello, e' aggiungere auth al bordo HTTP:
-- prima della risoluzione sessione MCP
-- prima dell'esecuzione dei tool
-- senza riscrivere query engine, registry o surface MCP
+- `SELECT ASCII(SUBSTRING(cognome, 1, 1)) AS x ...`, repeated for each position: numbers are never masked, so the surname can be reconstructed
+- `SELECT YEAR(data_nascita) ...`, `DATEDIFF(...)`, `LEN(email)`: any numeric value derived from a sensitive column
+- `SELECT COUNT(*) ... WHERE cognome LIKE 'R%'`: a predicate on a sensitive column answers yes/no, and with enough queries the value can be reconstructed
 
-Il design di riferimento e' documentato in [docs/AUTH_FUTURE_INTEGRATION.md](./docs/AUTH_FUTURE_INTEGRATION.md).
+Filtering output cannot close these channels. Inference must be blocked upstream, in database permissions. A test (`KNOWN LIMITATION` in `tests/anonymization-core.test.js`) documents the current behavior.
 
-## Protected Assets
+If the client may be hostile, or deliberate exfiltration is a risk to cover:
 
-Asset principali da proteggere:
-- connection string e altri secret runtime
-- dati letti dai target database
-- policy per target
-- distinzione fra target `dev`, `test`, `prod`
-- integrita' del target registry
+- use a dedicated SQL login for the target with permissions only on views that do not contain the sensitive columns (or expose them already pseudonymized), with no `SELECT` on the base tables
+- alternatively use database features designed for this, such as column-level permissions with `DENY SELECT` on sensitive columns, or Row-Level Security; SQL Server Dynamic Data Masking alone is not enough, because it can be bypassed with predicates and functions in the same way
+- treat server-side anonymization as a second line of defense, not as the security boundary
 
-## Required Operational Rules
+More detail: [docs/ANONYMIZATION.md](./docs/ANONYMIZATION.md).
 
-Regole operative minime:
-- non committare mai connection string, token o password nel repo
-- non usare il file `.env` del progetto per secret runtime
-- non esporre il server direttamente su internet
-- usare credenziali DB a privilegi minimi e separate per target quando possibile
-- trattare `environment=prod` come boundary con guard rail non aggirabili
-- usare `status=disabled` per target temporaneamente fuori uso invece di lasciarli attivi e inutilizzati
+## Future authentication boundary
 
-## Production Targets
+The current runtime does not implement strong authentication because the intended deployment is local or limited to a team.
 
-Per tutti i target `environment=prod`:
-- niente scorciatoie che riabilitano write in modo implicito
-- niente bypass delle policy via naming legacy o fallback deboli
-- anonimizzazione obbligatoria se il target lo richiede nel registry
-- i log non devono contenere row payload, parametri raw o SQL completo di default
-- ogni variazione al target registry va trattata come change operativo sensibile
+If the project moves up a level, authentication would be added at the HTTP edge:
 
-Se hai dubbi su un target `prod`, il comportamento corretto e' bloccare o disabilitare il target finche' la configurazione non e' chiara.
+- before MCP session resolution
+- before tool execution
+- without rewriting the query engine, the registry, or the MCP surface
 
-## Secrets Handling
+The reference design is in [docs/AUTH_FUTURE_INTEGRATION.md](./docs/AUTH_FUTURE_INTEGRATION.md).
 
-Linee guida:
-- tenere i secret fuori da Git e fuori da file di configurazione versionati
-- usare env var runtime o un secret store esterno
-- ruotare i secret cambiando il binding runtime, non patchando il codice
-- non includere secret in issue, PR, log o transcript di test
+## Protected assets
 
-Il progetto rifiuta intenzionalmente secret nel `.env` locale per evitare leakage accidentale.
+- connection strings and other runtime secrets
+- data read from the target databases
+- per-target policy
+- the distinction between `dev`, `test`, and `prod` targets
+- integrity of the target registry
 
-## Safe Usage Guidance
+## Required operational rules
 
-Uso considerato ragionevole:
-- sviluppo locale
-- analisi guidata su target dev o test
-- letture controllate su target prod con policy forti e anonimizzazione dove richiesta
+- never commit connection strings, tokens, or passwords to the repository
+- do not use the project `.env` file for runtime secrets
+- do not expose the server directly on the internet
+- use least-privilege DB credentials, separate per target where possible
+- treat `environment=prod` as a boundary with guard rails that cannot be bypassed
+- use `status=disabled` for targets that are temporarily out of use instead of leaving them active and unused
 
-Uso sconsigliato o fuori scope:
-- dare accesso indiscriminato a client o agenti non affidabili
-- usare credenziali sysadmin o equivalenti
-- considerare i guard rail applicativi come sostituti dei permessi SQL
-- considerare l'anonimizzazione dell'output una difesa contro un client ostile: non lo e'
-- usare `ANON_FAIL_OPEN=true` come scorciatoia per target `prod`: su `environment=prod` il progetto deve restare fail-closed
+## Production targets
 
-## Vulnerability Reporting
+For all `environment=prod` targets:
 
-Se trovi una vulnerabilita' o un comportamento insicuro:
-- non pubblicare subito exploit, secret o dettagli riproducibili in un issue pubblico
-- preferire GitHub Security Advisories o private reporting, se abilitati
-- se non e' disponibile un canale privato, aprire un issue minimale senza dettagli sensibili e chiedere un contatto riservato
+- no shortcuts that implicitly re-enable writes
+- no policy bypass through legacy naming or weak fallbacks
+- anonymization is mandatory if the target requires it in the registry
+- logs must not contain row payloads, raw parameters, or full SQL by default
+- every change to the target registry is a sensitive operational change
 
-Per problemi non sensibili o miglioramenti di hardening, una normale issue o PR va bene.
+If in doubt about a `prod` target, the correct behavior is to block or disable the target until the configuration is clear.
 
-## Security Posture Today
+## Secrets handling
 
-Il progetto punta a essere:
-- sicuro in modo pragmatico per uso locale o team limitato
-- leggibile e verificabile come portfolio pubblico
-- orientato verso standard piu' alti, senza fingersi un servizio enterprise gia' pronto per esposizione pubblica
+- keep secrets out of Git and out of versioned configuration files
+- use runtime environment variables or an external secret store
+- rotate secrets by changing the runtime binding, not by patching code
+- do not include secrets in issues, PRs, logs, or test transcripts
 
-Non va presentato come soluzione sicura "by default" per ambienti internet-facing senza ulteriori controlli architetturali.
+The project intentionally rejects secrets in the local `.env` to avoid accidental leakage.
+
+## Safe usage guidance
+
+Reasonable use:
+
+- local development
+- guided analysis on dev or test targets
+- controlled reads on prod targets with strong policy and anonymization where required
+
+Discouraged or out of scope:
+
+- giving indiscriminate access to untrusted clients or agents
+- using sysadmin or equivalent credentials
+- treating application guard rails as a substitute for SQL permissions
+- treating output anonymization as a defense against a hostile client
+- using `ANON_FAIL_OPEN=true` as a shortcut for `prod` targets: on `environment=prod` the project must stay fail-closed
+
+## Reporting a vulnerability
+
+If you find a vulnerability or unsafe behavior:
+
+- do not immediately publish exploits, secrets, or reproducible details in a public issue
+- prefer GitHub Security Advisories (private vulnerability reporting) on https://github.com/ragePolpette/llm-sql-db-mcp, if enabled
+- if no private channel is available, open a minimal issue without sensitive details and ask for a private contact
+
+For non-sensitive problems or hardening improvements, a normal issue or PR is fine.
+
+## What is not covered
+
+- deployments exposed to the internet or to untrusted networks
+- compromised hosts or operator accounts
+- databases accessed with overly permissive credentials
+- deliberate inference by a hostile query author (see the anonymization section)
+- vulnerabilities in third-party dependencies, which should be reported upstream
