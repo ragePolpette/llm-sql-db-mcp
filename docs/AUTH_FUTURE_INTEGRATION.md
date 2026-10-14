@@ -1,84 +1,92 @@
 # Future Auth Integration
 
-Questa nota descrive come introdurre autenticazione opzionale in `llm-sql-db-mcp` senza rifare il query engine e senza cambiare la surface MCP.
+This note describes how optional authentication could be added to `llm-sql-db-mcp` without reworking the query engine or changing the MCP surface. Nothing described here is implemented in the current runtime.
 
-Obiettivo:
-- chiarire dove si aggancia l'auth
-- evitare che il repo sembri ingenuo sul boundary di sicurezza
-- mantenere il target attuale locale o team-limitato
+Goals:
 
-Non-obiettivo:
-- implementare auth nel runtime attuale
-- trasformare il progetto in servizio pubblico o multi-tenant
+- clarify where authentication attaches
+- make the security boundary explicit
+- keep the current target of local or small-team use
 
-## Current Posture
+Non-goals:
 
-Oggi il server assume:
-- macchina locale o rete interna fidata
-- operatori noti
-- credenziali DB e target registry gestiti dallo stesso owner operativo
+- implementing authentication in the current runtime
+- turning the project into a public or multi-tenant service
 
-Questo significa che l'assenza di auth forte e' una scelta di scope, non una dimenticanza architetturale.
+## Current posture
 
-## Future Modes
+The server currently assumes:
 
-Se il progetto dovesse salire di livello, i mode ragionevoli sono:
-- `off`: default attuale per uso locale controllato
-- `static-bearer`: token condiviso semplice per reti interne limitate
-- `jwt`: bearer firmato con issuer/audience verificati dietro reverse proxy o IdP interno
-- `proxy-auth`: trust esplicito di header identitari iniettati da reverse proxy autenticato
+- a local machine or trusted internal network
+- known operators
+- DB credentials and the target registry managed by the same operational owner
 
-Per il target del repo, il primo step realistico sarebbe `static-bearer` o `proxy-auth`, non RBAC enterprise completo.
+The absence of strong authentication is a scope decision, not an architectural omission.
 
-## Integration Point
+## Possible modes
 
-L'integrazione corretta e' nel transport HTTP, prima della risoluzione sessione MCP e prima dell'esecuzione dei tool.
+If the project moves beyond local use, reasonable modes are:
 
-Punto di aggancio previsto:
-- middleware Express in `src/server.js`
-- estrazione principal da header o token
-- validazione del mode configurato
-- arricchimento del request context con `principal_id`, `auth_mode`, `auth_scope`
+- `off`: the current default for controlled local use
+- `static-bearer`: a simple shared token for limited internal networks
+- `jwt`: a signed bearer with issuer and audience verified behind a reverse proxy or internal IdP
+- `proxy-auth`: explicit trust of identity headers injected by an authenticated reverse proxy
 
-Questo consente di mantenere invariati:
+The first realistic step would be `static-bearer` or `proxy-auth`, not full enterprise RBAC.
+
+## Integration point
+
+Authentication belongs in the HTTP transport, before MCP session resolution and before tool execution.
+
+Planned attachment point:
+
+- an Express middleware in `src/server.js`
+- principal extraction from a header or token
+- validation of the configured mode
+- enrichment of the request context with `principal_id`, `auth_mode`, and `auth_scope`
+
+This keeps the following unchanged:
+
 - `target-registry`
 - `policy-engine`
 - `handlers`
-- query engine
+- the query engine
 
-## Minimal Principal Model
+## Minimal principal model
 
-Se l'auth viene introdotta, il principal minimo dovrebbe includere:
+If authentication is introduced, the minimal principal should include:
+
 - `principal_id`
 - `auth_mode`
-- `scopes` o `allowed_targets`
-- opzionale `display_name`
+- `scopes` or `allowed_targets`
+- optionally `display_name`
 
-Il principal non deve essere usato per sostituire le policy target-aware esistenti. Deve solo aggiungere un boundary ulteriore.
+The principal must not replace the existing target-aware policies. It only adds a further boundary.
 
-## Policy Mapping
+## Policy mapping
 
-L'evoluzione piu' pulita e':
-1. il middleware autentica il chiamante
-2. il request context porta il principal fino agli handler
-3. il policy engine valuta sia il target sia il principal
-4. i log registrano `request_id` e `principal_id` senza esporre payload sensibili
+The cleanest evolution is:
 
-Questo evita di spargere logica auth dentro i tool.
+1. the middleware authenticates the caller
+2. the request context carries the principal to the handlers
+3. the policy engine evaluates both the target and the principal
+4. logs record `request_id` and `principal_id` without exposing sensitive payloads
 
-## Safe Default
+This avoids spreading authentication logic across the tools.
 
-Quando l'auth verra' introdotta, il default ragionevole resta:
-- `AUTH_MODE=off` per sviluppo locale puro
-- fail-closed se `AUTH_MODE` e' diverso da `off` ma mancano i prerequisiti minimi
-- nessun bypass implicito per target `environment=prod`
+## Safe default
 
-## Deliberately Deferred
+When authentication is introduced, the default should remain:
 
-Fuori scope per il prossimo futuro:
+- `AUTH_MODE=off` for purely local development
+- fail-closed if `AUTH_MODE` is not `off` but the minimum prerequisites are missing
+- no implicit bypass for `environment=prod` targets
+
+## Deliberately deferred
+
+Out of scope for the foreseeable future:
+
 - multi-tenant RBAC
-- per-target ACL complesse lato principal
-- refresh token, session provider o OIDC completo
-- gestione utenti dentro questo repo
-
-La direzione corretta, se servira', e' integrazione semplice al bordo HTTP e policy enforcement riusando il modello target-aware gia' esistente.
+- complex per-target ACLs on the principal
+- refresh tokens, session providers, or full OIDC
+- user management inside this repository

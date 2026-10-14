@@ -1,75 +1,80 @@
 # Versioning Policy
 
-Questa policy definisce come versionare in modo semplice e credibile:
-- il contract MCP esposto dal server
-- il target registry caricato da file
-- la release pubblica del repository
+This policy defines how to version:
 
-Obiettivo:
-- evitare drift tra runtime, docs e release
-- chiarire cosa e' breaking e cosa no
-- mantenere il repo leggibile come prodotto serio anche se resta locale
+- the MCP contract exposed by the server
+- the file-based target registry
+- the public release of the repository
 
-## Source Of Truth
+Goals:
 
-La release pubblica del repo usa la versione in `package.json`.
+- avoid drift between runtime, docs, and release
+- clarify what is breaking and what is not
 
-Il runtime deve esporre la stessa versione tramite `config.serverVersion`, non una stringa hardcoded separata.
+## Source of truth
 
-Questo implica:
-- una release cambia `package.json`
-- il server espone la stessa versione in health/readiness e metadata MCP
-- docs e changelog si allineano a quella versione
+The public release uses the version in `package.json`.
 
-## Semver Scope
+The runtime exposes the same version through `config.serverVersion`, not a separate hardcoded string. This implies:
 
-Il progetto segue SemVer in modo pragmatico:
-- `MAJOR`: breaking change al contract MCP o al registry schema
-- `MINOR`: aggiunte backward-compatible a tool, metadati o configurazione
-- `PATCH`: fix, hardening, miglioramenti docs o chiarimenti senza rotture di contract
+- a release changes `package.json`
+- the server reports the same version in health and readiness output and in MCP metadata
+- docs and changelog align to that version
 
-## MCP Contract Rules
+## Semver scope
 
-Per questo repo il contract MCP include:
-- nomi dei tool
-- input attesi
-- shape di output rilevante per i client
-- codici errore machine-readable quando gia' documentati
+The project follows SemVer pragmatically:
 
-Regole:
-- aggiungere un nuovo tool opzionale e' `MINOR`
-- aggiungere un nuovo campo opzionale in output e' `MINOR`
-- cambiare nome di un tool o rimuoverlo e' `MAJOR`
-- rendere obbligatorio un campo prima opzionale e' `MAJOR`
-- cambiare semantica di un errore in modo incompatibile e' almeno `MINOR`, spesso `MAJOR`
+- `MAJOR`: breaking change to the MCP contract or the registry schema
+- `MINOR`: backward-compatible additions to tools, metadata, or configuration
+- `PATCH`: fixes, hardening, and documentation improvements that do not break the contract
 
-## Target Registry Rules
+## MCP contract rules
 
-Lo schema attuale del registry e' implicitamente `v1`:
-- top-level con `targets`
-- ogni target con metadata, binding di connessione e policy target-aware
+The MCP contract includes:
 
-Regole:
-- aggiungere campi opzionali backward-compatible e' `MINOR`
-- cambiare significato di campi esistenti o rimuoverli e' `MAJOR`
-- se in futuro serve una rottura di schema, introdurre un campo top-level esplicito come `registry_schema_version`
+- tool names
+- expected inputs
+- the shape of output that clients rely on
+- machine-readable error codes, where already documented
 
-Finche' il registry resta backward-compatible, non serve forzare un campo versione nel file.
+Rules:
 
-## Change Discipline
+- adding a new optional tool is `MINOR`
+- adding a new optional output field is `MINOR`
+- renaming or removing a tool is `MAJOR`
+- making a previously optional field required is `MAJOR`
+- changing the semantics of an error in an incompatible way is at least `MINOR`, often `MAJOR`
 
-Quando una modifica tocca contract MCP o registry:
-1. aggiornare questa policy o il doc pertinente se cambia la regola
-2. aggiornare `README.md` se cambia il comportamento utente
-3. aggiornare `targets.example.json` se cambia la configurazione raccomandata
-4. aggiungere test o fixture che coprano il nuovo contract
-5. annotare il change nel changelog o nella release note minima
+## Target registry rules
 
-## Deliberately Not Covered
+The current registry schema is implicitly `v1`:
 
-Questa policy non introduce:
-- version negotiation runtime
-- multi-schema registry loader
-- compatibility matrix complessa tra client e server
+- a top-level `targets` array
+- each target with metadata, a connection binding, and target-aware policy
 
-Per il target del repo sarebbe overbuild. Basta avere una disciplina chiara e una singola source of truth per la versione pubblica.
+Rules:
+
+- adding backward-compatible optional fields is `MINOR`
+- changing the meaning of existing fields or removing them is `MAJOR`
+- if a schema break is ever needed, introduce an explicit top-level field such as `registry_schema_version`
+
+While the registry stays backward-compatible, a version field is not required in the file.
+
+## Change discipline
+
+When a change touches the MCP contract or the registry:
+
+1. update this policy or the relevant document if the rule changes
+2. update `README.md` if user-visible behavior changes
+3. update `targets.example.json` if the recommended configuration changes
+4. add tests or fixtures covering the new contract
+5. record the change in the changelog
+
+## Deliberately not covered
+
+This policy does not introduce:
+
+- runtime version negotiation
+- a multi-schema registry loader
+- a compatibility matrix between clients and servers
