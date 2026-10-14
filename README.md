@@ -1,12 +1,41 @@
 # llm-sql-db-mcp
 
-`llm-sql-db-mcp` is a policy-driven MCP server for SQL Server targets with a fixed tool surface, dynamic target registry, and target-aware anonymization rules.
+Policy-driven MCP server that gives clients controlled access to multiple SQL Server targets through a fixed tool surface.
 
-The project is designed for local or small-team environments where an MCP client needs controlled database access with explicit guard rails. It is not a general ORM, query engine, or internet-facing database control plane.
+[![CI](https://github.com/ragePolpette/llm-sql-db-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ragePolpette/llm-sql-db-mcp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](package.json)
 
-## What It Does
+## Overview
 
-The server exposes a small stable MCP surface for:
+The project is designed for local or small-team environments where an MCP client needs database access with explicit guard rails. It is not a general ORM, query engine, or internet-facing database control plane.
+
+MCP clients that can query databases directly need stronger operational boundaries than running arbitrary SQL. This server keeps those boundaries explicit:
+
+- the target registry is the source of truth
+- policy decisions are made per target
+- SQL guard rails run before execution
+- production targets are treated with non-bypassable fences
+- optional field-aware anonymization is applied before results leave the server
+
+Scope:
+
+- SQL Server access through a constrained MCP tool surface
+- local or trusted-network deployment
+- explicit target policies for read, write, and anonymization
+- runtime observability and readiness checks
+
+Non-goals:
+
+- databases other than SQL Server
+- built-in admin UI
+- public multi-tenant deployment
+- enterprise IAM or internet-facing authentication
+- replacing database-side permissions with application policy alone
+
+## Capabilities
+
+The server exposes a small, stable MCP surface for:
 
 - listing configured database targets
 - inspecting target metadata and effective policies
@@ -15,43 +44,14 @@ The server exposes a small stable MCP surface for:
 - running diagnostic reads with environment resolution or explicit target pinning
 - applying deterministic or provider-assisted anonymization when required
 
-## Why It Exists
+MCP tools:
 
-MCP clients that can query databases directly need stronger operational boundaries than “just run SQL”.
-
-`llm-sql-db-mcp` is built to keep those boundaries explicit:
-
-- target registry as the source of truth
-- policy decisions per target
-- SQL guard rails before execution
-- environment-aware treatment of production targets
-- optional field-aware anonymization before results leave the server
-
-## Supersedes
-
-This repository is the unifying successor to:
-
-- `llm-db-dev-mcp`
-- `llm-db-prod-mcp`
-
-The older split repositories are kept only as historical predecessors and should be treated as deprecated in favor of this target-based runtime.
-
-## Scope And Non-Goals
-
-In scope:
-
-- SQL Server access through a constrained MCP tool surface
-- local or trusted-network deployment
-- explicit target policies for read, write, and anonymization
-- runtime observability and readiness checks
-
-Out of scope:
-
-- databases other than SQL Server
-- built-in admin UI
-- public multi-tenant deployment
-- enterprise IAM or internet-facing auth
-- replacing database-side permissions with application policy alone
+- `db_target_list`
+- `db_target_info`
+- `db_policy_info`
+- `db_read`
+- `db_write`
+- `run_diagnostic_query` (when enabled by the shipped runtime surface)
 
 ## Architecture
 
@@ -60,21 +60,12 @@ Main runtime components:
 - `src/server.js`: MCP HTTP transport and process lifecycle
 - `src/lib/config.js`: runtime configuration parsing and validation
 - `src/lib/target-registry.js`: target loading and normalization
-- `src/lib/policy-engine.js`: target-aware read/write/anonymization decisions
+- `src/lib/policy-engine.js`: target-aware read, write, and anonymization decisions
 - `src/lib/sql-guard.js`: lexical and structural SQL guard rails
 - `src/lib/drivers/sqlserver.js`: SQL Server execution through `mssql`
 - `src/lib/anonymization/`: deterministic masking and field classification
 
-Main MCP tools:
-
-- `db_target_list`
-- `db_target_info`
-- `db_policy_info`
-- `db_read`
-- `db_write`
-- `run_diagnostic_query` when enabled by the shipped runtime surface
-
-## Data Flow
+Request flow:
 
 ```text
 MCP request
@@ -98,152 +89,122 @@ SQL Server driver
 optional anonymization
    |
    v
-safe MCP response + sanitized logs
+MCP response + sanitized logs
 ```
 
-## Security Model
-
-This project assumes a pragmatic local/internal security model:
-
-- the server runs on a workstation or a limited trusted network
-- connection strings stay outside repo files and outside `.env`
-- production targets must keep non-bypassable fences
-- logs should not expose raw SQL payloads, raw parameters, or row contents
-- client code does not define policy; the target registry does
-
-The goal is to reduce operational mistakes and unsafe MCP usage inside a controlled environment, not to pretend this is a full public-cloud data access platform.
-
-See also:
-
-- [SECURITY.md](SECURITY.md)
-- [docs/AUTH_FUTURE_INTEGRATION.md](docs/AUTH_FUTURE_INTEGRATION.md)
-
-## Local Run
+## Quick start
 
 Requirements:
 
-- Node.js 22+
-- runtime environment variables for target connection strings
-- optional local LM Studio or Ollama when a target requires provider-assisted anonymization
-
-Install:
+- Node.js 22 or later
+- a SQL Server connection string for each active target, provided as a runtime environment variable
+- optional: a local LM Studio or Ollama instance when a target uses provider-assisted anonymization
 
 ```bash
 npm install
-```
-
-Run:
-
-```bash
+cp .env.example .env
 npm start
 ```
 
-Health and readiness:
+The server reads `targets.json` by default. See [targets.example.json](targets.example.json) for a sample registry. Each target names the environment variable that holds its connection string (`connection_env_var`); set that variable in the shell that starts the server, not in `.env`.
+
+HTTP endpoints:
 
 - `GET /health`
 - `GET /ready`
-
-MCP endpoints:
-
-- `POST /mcp`
-- `GET /mcp`
-- `DELETE /mcp`
+- `POST /mcp`, `GET /mcp`, `DELETE /mcp`
 
 ## Configuration
 
-Key runtime settings include:
+Runtime settings are read from environment variables. [.env.example](.env.example) lists the supported ones with defaults. Key settings:
 
-- `HOST`
-- `PORT`
+- `HOST`, `PORT`
 - `TARGETS_FILE`
 - `SESSION_TTL_MS`
 - `ALLOWED_ORIGINS`
-- `LOG_LEVEL`
-- `LOG_FORMAT`
+- `LOG_LEVEL`, `LOG_FORMAT`
 - `ANON_HASH_SALT`
 - `ANON_FIELD_IDENTIFICATION`
 - `ANON_FAIL_OPEN`
 - `ANON_TIMEOUT_MS`
-- `ANON_CATALOG_PATH` (optional: enables the self-populating column catalog; keep it outside the repo, it contains schema names)
-- `ANON_MIN_CONFIDENCE` (0-1, default 0.8: a provider `none` verdict below this confidence is ignored and the column is masked)
+- `ANON_MIN_CONFIDENCE` (0-1, default 0.8): a provider `none` verdict below this confidence is ignored and the column is masked
+- `ANON_CATALOG_PATH` (optional): enables the self-populating column catalog; keep it outside the repository because it contains schema names
 
-Target overrides can be supplied through `TARGET_<TARGET_ID>_...` environment variables for per-target read/write/anonymization behavior.
+Per-target overrides can be supplied through `TARGET_<TARGET_ID>_...` environment variables for read, write, and anonymization behavior.
 
-Targets with anonymization enabled also accept `anonymization_trust` (`corroborated` default | `strict`): `strict` ignores any provider "not sensitive" verdict on columns not recognised deterministically, so those string columns are masked. Anonymization decisions are logged per reason (`db.anonymizer_decisions`) without values.
+Targets with anonymization enabled also accept `anonymization_trust` (`corroborated` by default, or `strict`). `strict` ignores any provider "not sensitive" verdict on columns that are not recognized deterministically, so those string columns are masked. Anonymization decisions are logged per reason (`db.anonymizer_decisions`) without values.
 
-Important rule:
+Connection strings, API keys, passwords, and other secrets must not live in the repository `.env`.
 
-- connection strings, API keys, passwords, and secrets must not live in the repository `.env`
+### Target registry
 
-## Target Registry
+The runtime reads targets from `targets.json`. Each target defines:
 
-The runtime reads targets from `targets.json`.
-
-Each target defines:
-
-- `target_id`
-- `display_name`
-- `environment`
-- `status`
+- `target_id`, `display_name`, `environment`, `status`
 - safe metadata
-- connection string environment binding
-- read/write permissions
+- the environment variable that holds its connection string
+- read and write permissions
 - anonymization configuration
 
-The example registry in [targets.example.json](targets.example.json) demonstrates:
+The example registry in [targets.example.json](targets.example.json) contains a dev read/write target, a prod read-only target with anonymization, and a disabled target.
 
-- a dev read/write target
-- a prod read-only target with anonymization
-- a disabled target kept only for controlled runtime configuration
+## Usage
 
-## Quality Gates
+Point an MCP client at the HTTP endpoint, for example `http://127.0.0.1:3000/mcp` with the default `HOST`, `PORT`, and `MCP_PATH`. A typical session lists targets with `db_target_list`, inspects a target with `db_target_info` and `db_policy_info`, and then reads with `db_read`.
 
-Available checks:
+### Anonymization catalog
+
+With `ANON_CATALOG_PATH` set, column verdicts are reviewed with:
 
 ```bash
+npm run anon:catalog -- list
+npm run anon:catalog -- set dbo.Clienti.Note sensitive --kind text
+```
+
+Details and the anonymization threat model are in [docs/ANONYMIZATION.md](docs/ANONYMIZATION.md).
+
+## Security
+
+The project assumes a pragmatic local or internal security model:
+
+- the server runs on a workstation or a limited trusted network
+- connection strings stay outside repository files and outside `.env`
+- production targets keep non-bypassable fences
+- logs should not expose raw SQL payloads, raw parameters, or row contents
+- client code does not define policy; the target registry does
+
+Output anonymization protects against accidental exposure to a client acting in good faith. It does not protect against a hostile caller inferring values through crafted queries. For that case, restrict the database login at the database level.
+
+The goal is to reduce operational mistakes and unsafe MCP usage inside a controlled environment. It is not a public-cloud data access platform.
+
+See [SECURITY.md](SECURITY.md) for the threat model and reporting instructions, and [docs/AUTH_FUTURE_INTEGRATION.md](docs/AUTH_FUTURE_INTEGRATION.md) for the planned authentication boundary.
+
+## Development
+
+```bash
+npm ci
 npm run check
 npm test
 ```
 
-## Project Status
+`npm run check` runs `node --check` on the source files. `npm test` runs the Node.js test runner. Tests use synthetic data and do not need a SQL Server instance. See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
 
-This repository is in active development and should be treated as the current canonical SQL MCP server in this stack.
-
-## Documentation
+Further documentation:
 
 - [docs/README.md](docs/README.md)
 - [docs/VERSIONING_POLICY.md](docs/VERSIONING_POLICY.md)
-- [CONTRIBUTING.md](CONTRIBUTING.md)
 - [CHANGELOG.md](CHANGELOG.md)
-- [LICENSE](LICENSE)
 
-## Development Process
+## Project status
+
+Active development. The version in `package.json` is 0.1.0 and the package is marked private. This repository is the current canonical SQL MCP server in this stack.
 
 Built with AI-assisted workflows, while architecture, tradeoffs, integration, review, and validation were directed by the author.
 
+## Related projects
 
-## Anonymization catalog
+This repository supersedes `llm-db-dev-mcp` and `llm-db-prod-mcp`. Those split repositories are kept only as historical predecessors and are deprecated in favor of this target-based runtime.
 
-With `ANON_CATALOG_PATH` set, the server learns which columns are safe or sensitive per target and you review the result periodically:
+## License
 
-```
-npm run anon:catalog -- list                      # pending columns, most used first
-npm run anon:catalog -- list --status auto-safe   # what was auto-promoted (worth a skim)
-npm run anon:catalog -- set dbo.Clienti.Note sensitive --kind text
-npm run anon:catalog -- set dbo.Ordini.Stato safe
-```
-
-- Needs SQL Server column origins (`sys.dm_exec_describe_first_result_set`); results without origins do not touch the catalog.
-- `auto-safe` is granted only to repeated, short, non-name-like, PII-free value sets. Free text and Title Case values stay masked until a human decides.
-- Machine evidence is per `target_id` (dev data never vouches for prod). Human verdicts apply to all targets.
-- Verdicts can only be edited with the CLI, never through MCP tools.
-
-## Anonymization threat model
-
-Output anonymization protects against **accidental exposure** of personal data to a client acting in good faith (for example an LLM reading production data). It does **not** protect against a hostile caller crafting queries to infer values: numbers derived from sensitive columns (`ASCII(SUBSTRING(cognome, 1, 1))`, `YEAR(data_nascita)`) are returned in clear, and predicates on sensitive columns (`COUNT(*) ... WHERE cognome LIKE 'R%'`) answer yes/no questions. Filtering output cannot close these channels.
-
-If the client may be hostile, give the target a dedicated SQL login that can only read views without the sensitive columns, and treat anonymization as a second line of defense. SECURITY.md has a hardening checklist with a T-SQL example and verification steps.
-
-On anonymized targets, SQL Server error messages are scrubbed of data values (for example `CAST(cognome AS int)` would otherwise echo the surname); compile-time errors are kept verbatim.
-
-When the server cannot verify column origins, the `db_read` result carries `anonymization_notes` explaining why more columns were masked and how to rewrite the query.
+MIT. See [LICENSE](LICENSE).
