@@ -2,6 +2,9 @@ import sql from "mssql";
 
 const poolCache = new Map();
 const PARAM_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const READ_ISOLATION_LEVEL = sql.ISOLATION_LEVEL.READ_COMMITTED;
+const defaultPoolFactory = config => new sql.ConnectionPool(config).connect();
+let poolFactory = defaultPoolFactory;
 
 function normalizeCellValue(value) {
   if (value === null || value === undefined) {
@@ -33,18 +36,20 @@ function normalizeCellValue(value) {
   return value;
 }
 
-function normalizeRows(rows) {
-  return rows.map(row =>
-    Object.fromEntries(Object.entries(row).map(([key, value]) => [key, normalizeCellValue(value)]))
-  );
+function normalizeRow(row) {
+  return Object.fromEntries(Object.entries(row).map(([key, value]) => [key, normalizeCellValue(value)]));
 }
 
-function normalizeColumns(recordset) {
-  if (!recordset?.columns) {
+function normalizeRows(rows) {
+  return rows.map(normalizeRow);
+}
+
+function normalizeColumns(columns) {
+  if (!columns) {
     return [];
   }
 
-  return Object.entries(recordset.columns).map(([name, meta]) => ({
+  return Object.entries(columns).map(([name, meta]) => ({
     name,
     nullable: Boolean(meta.nullable),
     type: meta.type?.name ?? "unknown"
@@ -93,16 +98,34 @@ export function buildSqlServerConnectionConfig(connectionString, driverConfig = 
   };
 }
 
-async function getPool(connectionString, driverConfig = {}) {
+// The in-flight promise is cached so that concurrent first requests share one pool instead of
+// each opening its own and leaking all but the last.
+function getPool(connectionString, driverConfig = {}) {
   const cachedPool = poolCache.get(connectionString);
   if (cachedPool) {
     return cachedPool;
   }
 
-  const pool = new sql.ConnectionPool(buildSqlServerConnectionConfig(connectionString, driverConfig));
-  const connectedPool = await pool.connect();
-  poolCache.set(connectionString, connectedPool);
-  return connectedPool;
+  const pending = Promise.resolve()
+    .then(() => poolFactory(buildSqlServerConnectionConfig(connectionString, driverConfig)))
+    .catch(error => {
+      if (poolCache.get(connectionString) === pending) {
+        poolCache.delete(connectionString);
+      }
+      throw error;
+    });
+  poolCache.set(connectionString, pending);
+  return pending;
+}
+
+function bindParameters(request, parameters) {
+  for (const [name, value] of Object.entries(parameters)) {
+    if (!PARAM_NAME_PATTERN.test(name)) {
+      throw new Error(`Invalid SQL parameter name: ${name}`);
+    }
+
+    request.input(name, value);
+  }
 }
 
 function describeParameterType(value) {
@@ -166,6 +189,73 @@ async function describeColumnOrigins(pool, sqlText, parameters) {
   return { origins, status: "resolved", reason: null, detail: null };
 }
 
+// Streams the first result set and stops reading as soon as the row or byte cap is exceeded, so
+// at most maxRows + 1 rows are ever materialized. Streaming is used instead of rewriting the query
+// with TOP because it works for every statement the read guard accepts (CTEs, UNION, ORDER BY,
+// OFFSET/FETCH, existing TOP) without parsing or altering the caller's SQL.
+function streamBoundedRows(request, sqlText, { maxRows, maxResultBytes }) {
+  return new Promise((resolve, reject) => {
+    const rows = [];
+    let columns = null;
+    let recordsetCount = 0;
+    let rowsSeen = 0;
+    let resultBytes = 2;
+    let truncated = false;
+    let stopped = false;
+    let streamError = null;
+
+    function stop() {
+      if (stopped) return;
+      stopped = true;
+      request.cancel();
+    }
+
+    request.stream = true;
+    request.on("recordset", recordsetColumns => {
+      recordsetCount += 1;
+      if (recordsetCount === 1) {
+        columns = recordsetColumns;
+      }
+    });
+    request.on("row", row => {
+      if (stopped || recordsetCount > 1) return;
+      rowsSeen += 1;
+      if (rowsSeen > maxRows) {
+        truncated = true;
+        stop();
+        return;
+      }
+
+      const normalized = normalizeRow(row);
+      const rowBytes = Buffer.byteLength(JSON.stringify(normalized), "utf8");
+      const separatorBytes = rows.length === 0 ? 0 : 1;
+      if (maxResultBytes !== null && maxResultBytes !== undefined && resultBytes + separatorBytes + rowBytes > maxResultBytes) {
+        truncated = true;
+        stop();
+        return;
+      }
+
+      resultBytes += separatorBytes + rowBytes;
+      rows.push(normalized);
+    });
+    request.on("error", error => {
+      if (stopped && error?.code === "ECANCEL") return;
+      streamError ??= error;
+    });
+
+    Promise.resolve(request.query(sqlText)).then(
+      () => {
+        if (streamError) {
+          reject(streamError);
+          return;
+        }
+        resolve({ columns, rows, rowsSeen, resultBytes, truncated });
+      },
+      error => reject(streamError ?? error)
+    );
+  });
+}
+
 export async function executeSqlServerRead({
   connectionString,
   sqlText,
@@ -175,29 +265,30 @@ export async function executeSqlServerRead({
   describeOrigins = false,
   driverConfig = {}
 }) {
-  const pool = await getPool(connectionString, driverConfig);
-  const request = pool.request();
-
-  for (const [name, value] of Object.entries(parameters)) {
+  for (const name of Object.keys(parameters)) {
     if (!PARAM_NAME_PATTERN.test(name)) {
       throw new Error(`Invalid SQL parameter name: ${name}`);
     }
-
-    request.input(name, value);
   }
 
+  const pool = await getPool(connectionString, driverConfig);
   const originResolution = describeOrigins ? await describeColumnOrigins(pool, sqlText, parameters) : null;
 
   const startedAt = Date.now();
-  const queryResult = await request.query(sqlText);
-  const recordset = queryResult.recordset ?? [];
-  const normalizedRows = normalizeRows(recordset);
-  const limitedRows = normalizedRows.slice(0, maxRows);
-  const boundedRows = buildBoundedRows(limitedRows, maxResultBytes);
-  const truncated = boundedRows.rows.length < normalizedRows.length;
+  const transaction = pool.transaction();
+  await transaction.begin(READ_ISOLATION_LEVEL);
+  let streamed;
+  try {
+    const request = transaction.request();
+    bindParameters(request, parameters);
+    streamed = await streamBoundedRows(request, sqlText, { maxRows, maxResultBytes });
+  } finally {
+    // db_read never commits: anything the statement might have changed is discarded.
+    await transaction.rollback().catch(() => {});
+  }
 
   return {
-    columns: normalizeColumns(recordset),
+    columns: normalizeColumns(streamed.columns),
     ...(originResolution
       ? {
           column_origins: originResolution.origins,
@@ -206,13 +297,13 @@ export async function executeSqlServerRead({
           column_origins_detail: originResolution.detail
         }
       : {}),
-    rows: boundedRows.rows,
-    row_count: boundedRows.rows.length,
-    total_rows_before_limits: normalizedRows.length,
+    rows: streamed.rows,
+    row_count: streamed.rows.length,
+    total_rows_before_limits: streamed.rowsSeen,
     max_rows_applied: maxRows,
     max_result_bytes_applied: maxResultBytes,
-    result_bytes: boundedRows.resultBytes,
-    truncated,
+    result_bytes: streamed.resultBytes,
+    truncated: streamed.truncated,
     duration_ms: Date.now() - startedAt
   };
 }
@@ -226,14 +317,7 @@ export async function executeSqlServerWrite({
 }) {
   const pool = await getPool(connectionString, driverConfig);
   const request = pool.request();
-
-  for (const [name, value] of Object.entries(parameters)) {
-    if (!PARAM_NAME_PATTERN.test(name)) {
-      throw new Error(`Invalid SQL parameter name: ${name}`);
-    }
-
-    request.input(name, value);
-  }
+  bindParameters(request, parameters);
 
   const startedAt = Date.now();
   const queryResult = await request.query(sqlText);
@@ -242,7 +326,7 @@ export async function executeSqlServerWrite({
   const boundedRows = buildBoundedRows(normalizedRows, maxResultBytes);
 
   return {
-    columns: normalizeColumns(recordset),
+    columns: normalizeColumns(recordset.columns),
     rows: boundedRows.rows,
     row_count: boundedRows.rows.length,
     rows_affected: Array.isArray(queryResult.rowsAffected)
@@ -256,11 +340,14 @@ export async function executeSqlServerWrite({
 }
 
 export async function closeSqlServerPools() {
-  const pools = [...poolCache.values()];
+  const pendingPools = [...poolCache.values()];
   poolCache.clear();
 
   await Promise.allSettled(
-    pools.map(pool => pool.close())
+    pendingPools.map(async pendingPool => {
+      const pool = await pendingPool;
+      await pool.close();
+    })
   );
 }
 
@@ -271,8 +358,12 @@ export const __sqlServerTestUtils = {
   getPoolCacheSize() {
     return poolCache.size;
   },
+  getPool,
   setCachedPool(connectionString, pool) {
-    poolCache.set(connectionString, pool);
+    poolCache.set(connectionString, Promise.resolve(pool));
+  },
+  setPoolFactory(factory) {
+    poolFactory = factory ?? defaultPoolFactory;
   },
   resetPoolCache() {
     poolCache.clear();

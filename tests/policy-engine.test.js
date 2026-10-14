@@ -4,6 +4,7 @@ import { buildPolicyInfo, evaluateToolPolicy, toSafeTargetInfo, toSafeTargetSumm
 
 const activeProdTarget = {
   target_id: "prod-main",
+  environment: "prod",
   status: "active",
   read_enabled: true,
   write_enabled: false,
@@ -44,7 +45,7 @@ test("buildPolicyInfo returns all target-scoped policies when tool_name is omitt
 
 test("evaluateToolPolicy denies db_write when write is disabled", () => {
   const policy = evaluateToolPolicy({
-    target: activeProdTarget,
+    target: { ...activeProdTarget, environment: "staging" },
     toolName: "db_write"
   });
 
@@ -71,4 +72,24 @@ test("safe target views expose runtime_status when present", () => {
 
   assert.equal(toSafeTargetSummary(target).runtime_status, "vault_locked");
   assert.equal(toSafeTargetInfo(target).runtime_status, "vault_locked");
+});
+
+test("evaluateToolPolicy hard-fences db_write on prod even when the target object enables it", () => {
+  const policy = evaluateToolPolicy({
+    target: { ...activeProdTarget, write_enabled: true },
+    toolName: "db_write"
+  });
+
+  assert.equal(policy.allowed, false);
+  assert.match(policy.denial_reason, /hard-fenced/i);
+});
+
+test("evaluateToolPolicy requires anonymization for db_write on anonymized targets", () => {
+  const policy = evaluateToolPolicy({
+    target: { ...activeProdTarget, environment: "staging", write_enabled: true },
+    toolName: "db_write"
+  });
+
+  assert.equal(policy.allowed, true);
+  assert.equal(policy.anonymization_required, true);
 });

@@ -25,4 +25,8 @@ If the client may be hostile, give the target a dedicated SQL login that can onl
 
 On anonymized targets, SQL Server error messages are scrubbed of data values (for example `CAST(cognome AS int)` would otherwise echo the surname). Compile-time errors, which happen before any row is read, are kept verbatim so the query can still be fixed.
 
-When the server cannot verify column origins, the `db_read` result carries `anonymization_notes` explaining why more columns were masked and how to rewrite the query.
+When the server cannot verify column origins, the `db_read` result carries `anonymization_notes` explaining why more columns were masked and how to rewrite the query. Rows returned by `db_write` through an `OUTPUT` clause have no column origins, so on targets that require anonymization every text column in them is treated as computed and masked unless a deterministic rule recognizes it.
+
+## Provider classification
+
+Unless `ANON_FIELD_IDENTIFICATION=heuristic` (and the mode is not `llm-strict`), the server asks the target's provider (LM Studio or Ollama) to classify unknown columns. The request contains column names, the query sources, and up to five raw distinct sample values per column. Run the provider locally or on a host you trust with that data. Verdicts are cached in memory per `target_id` and per query source set, so a verdict obtained on one target is never reused on another.

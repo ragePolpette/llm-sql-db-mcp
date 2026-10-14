@@ -6,6 +6,7 @@ import path from "node:path";
 import {loadTargetRegistry} from "../src/lib/target-registry.js";
 import {__sqlServerTestUtils, executeSqlServerRead} from "../src/lib/drivers/sqlserver.js";
 import {__anonymizerTestUtils} from "../src/lib/anonymizer.js";
+import {createFakePool} from "./helpers/fake-mssql.js";
 
 test("Any keeps large multibyte rows before and after anonymization; numeric caps still apply", () => {
   const rows = [{value: "è".repeat(150000)}, {value: "second"}];
@@ -22,9 +23,7 @@ test("Any keeps large multibyte rows before and after anonymization; numeric cap
 
 test("Any still applies the independent row cap in the actual SQL driver", async () => {
   const connectionString = "synthetic-only";
-  __sqlServerTestUtils.setCachedPool(connectionString, {
-    request: () => ({query: async () => ({recordset:[{id:1, value:"x".repeat(200000)}, {id:2}]})})
-  });
+  __sqlServerTestUtils.setCachedPool(connectionString, createFakePool({dataRows:[{id:1, value:"x".repeat(200000)}, {id:2}]}));
   try {
     const result = await executeSqlServerRead({connectionString, sqlText:"synthetic", maxRows:1, maxResultBytes:null});
     assert.equal(result.row_count, 1);

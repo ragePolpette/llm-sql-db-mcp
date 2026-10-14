@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { TargetRegistry } from "../src/lib/target-registry.js";
 import { createHandlers } from "../src/lib/handlers.js";
+import { anonymizeQueryResult } from "../src/lib/anonymizer.js";
 
 function parseErrorEnvelope(result) {
   return JSON.parse(result.content[1].text);
@@ -438,27 +439,136 @@ test("dbWrite executes a write statement when target write is enabled", async ()
   assert.equal(result.structuredContent.rows_affected, 1);
 });
 
-test("dbWrite is denied for prod targets by the hard fence", async () => {
+test("dbWrite is denied for prod targets by the hard fence even when the target enables writes", async () => {
+  const unfencedProdTarget = createTarget({
+    target_id: "prod-main",
+    display_name: "Prod Main",
+    environment: "prod",
+    status: "active",
+    connection_env_var: "DB_PROD_MAIN_CONNECTION_STRING",
+    read_enabled: true,
+    write_enabled: true,
+    anonymization_enabled: false,
+    anonymization_mode: "off",
+    llm_provider: "none",
+    llm_model: "",
+    max_rows: 5,
+    max_result_bytes: 1024,
+    allowed_tools: ["db_read", "db_write"]
+  });
+  const registries = [
+    new TargetRegistry([unfencedProdTarget]),
+    { get: targetId => (targetId === "prod-main" ? structuredClone(unfencedProdTarget) : undefined) }
+  ];
+
+  for (const targetRegistry of registries) {
+    let writeCalled = false;
+    const handlers = createHandlers({
+      targetRegistry,
+      env: {
+        DB_PROD_MAIN_CONNECTION_STRING: "Server=.;Database=Prod;Trusted_Connection=True;"
+      },
+      executeSqlRead: async () => {
+        throw new Error("read should not be called");
+      },
+      executeSqlWrite: async () => {
+        writeCalled = true;
+        return { columns: [], rows: [], row_count: 0, rows_affected: 1, truncated: false, duration_ms: 1 };
+      }
+    });
+
+    const result = await handlers.dbWrite({
+      target_id: "prod-main",
+      sql: "UPDATE dbo.Users SET status = 'OPEN' WHERE id = 1"
+    });
+
+    assert.equal(writeCalled, false);
+    assert.equal(result.isError, true);
+    assert.equal(parseErrorEnvelope(result).error.code, "policy_denied");
+    assert.match(result.content[0].text, /hard-fenced/i);
+  }
+});
+
+test("dbWrite anonymizes OUTPUT rows when the target requires anonymization", async () => {
+  const stagingTarget = createTarget({
+    target_id: "staging-main",
+    display_name: "Staging Main",
+    environment: "staging",
+    status: "active",
+    connection_env_var: "DB_STAGING_MAIN_CONNECTION_STRING",
+    read_enabled: true,
+    write_enabled: true,
+    anonymization_enabled: true,
+    anonymization_mode: "deterministic",
+    llm_provider: "lmstudio",
+    llm_model: "gemma",
+    max_rows: 5,
+    max_result_bytes: 4096,
+    allowed_tools: ["db_read", "db_write"]
+  });
+  const events = [];
+  const handlers = createHandlers({
+    targetRegistry: new TargetRegistry([stagingTarget]),
+    env: { DB_STAGING_MAIN_CONNECTION_STRING: "Server=.;Database=Staging;" },
+    executeSqlWrite: async () => ({
+      columns: [],
+      rows: [{ id: 7, email: "mario.rossi@example.com", cognome: "Rossi" }],
+      row_count: 1,
+      rows_affected: 1,
+      max_result_bytes_applied: 4096,
+      result_bytes: 64,
+      truncated: false,
+      duration_ms: 3
+    }),
+    anonymizeQueryResult,
+    providerConfig: { hashSalt: "salt-salt-salt", fieldIdentification: "heuristic", timeoutMs: 1000 },
+    logDbEvent: (event, payload) => events.push({ event, payload })
+  });
+
+  const result = await handlers.dbWrite({
+    target_id: "staging-main",
+    sql: "UPDATE dbo.Users SET status = 'OPEN' OUTPUT inserted.id, inserted.email, inserted.cognome WHERE id = 7"
+  });
+
+  assert.equal(result.isError, undefined);
+  const [row] = result.structuredContent.rows;
+  assert.equal(row.id, 7);
+  assert.notEqual(row.email, "mario.rossi@example.com");
+  assert.notEqual(row.cognome, "Rossi");
+  assert.equal(result.structuredContent.anonymization_applied, true);
+  assert.equal(result.structuredContent.rows_affected, 1);
+  assert.equal("sql_text" in result.structuredContent, false);
+  const logged = events.find(e => e.event === "query_out").payload.response.rows[0];
+  assert.notEqual(logged.email, "mario.rossi@example.com");
+});
+
+test("dbWrite does not call the anonymizer for targets without anonymization", async () => {
   const handlers = createHandlers({
     targetRegistry: createTestRegistry(),
-    env: {
-      DB_PROD_MAIN_CONNECTION_STRING: "Server=.;Database=Prod;Trusted_Connection=True;"
-    },
-    executeSqlRead: async () => {
-      throw new Error("read should not be called");
-    },
-    executeSqlWrite: async () => {
-      throw new Error("write should not be called");
+    env: { DB_DEV_MAIN_CONNECTION_STRING: "Server=.;Database=Test;" },
+    executeSqlWrite: async () => ({
+      columns: [],
+      rows: [{ id: 1, email: "a@b.it" }],
+      row_count: 1,
+      rows_affected: 1,
+      max_result_bytes_applied: 1024,
+      result_bytes: 30,
+      truncated: false,
+      duration_ms: 1
+    }),
+    anonymizeQueryResult: async () => {
+      throw new Error("anonymizer should not be called");
     }
   });
 
   const result = await handlers.dbWrite({
-    target_id: "prod-main",
-    sql: "UPDATE dbo.Users SET status = 'OPEN' WHERE id = 1"
+    target_id: "dev-main",
+    sql: "DELETE FROM dbo.Users OUTPUT deleted.id, deleted.email WHERE id = 1"
   });
 
-  assert.equal(result.isError, true);
-  assert.match(result.content[0].text, /Write access is (disabled|hard-fenced off)/i);
+  assert.equal(result.isError, undefined);
+  assert.equal(result.structuredContent.rows[0].email, "a@b.it");
+  assert.equal(result.structuredContent.anonymization_applied, false);
 });
 
 function createFailingHandlers(error, events) {

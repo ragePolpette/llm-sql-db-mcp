@@ -74,6 +74,11 @@ function parseEnum(value, allowed, fallback, label) {
   throw new Error(`${label} must be one of: ${allowed.join(", ")}.`);
 }
 
+export function isLoopbackHost(host) {
+  const normalized = String(host ?? "").trim().toLowerCase().replace(/^\[|\]$/g, "");
+  return normalized === "localhost" || normalized === "::1" || /^127(?:\.\d{1,3}){3}$/.test(normalized);
+}
+
 function assertNoForbiddenSecretsInDotEnv(envPath) {
   if (!fs.existsSync(envPath)) {
     return;
@@ -116,6 +121,13 @@ export function loadRuntimeConfig({ cwd = process.cwd(), env = process.env } = {
 
   if (port <= 0) {
     throw new Error("PORT must be greater than zero.");
+  }
+
+  const apiKey = String(env.DB_MCP_API_KEY ?? "").trim() || null;
+  if (!apiKey && !isLoopbackHost(host)) {
+    throw new Error(
+      `DB_MCP_API_KEY is required when HOST is not a loopback address (HOST=${host}). Set DB_MCP_API_KEY in the runtime environment or bind to 127.0.0.1.`
+    );
   }
 
   if (sessionTtlMs < 0) {
@@ -193,6 +205,9 @@ export function loadRuntimeConfig({ cwd = process.cwd(), env = process.env } = {
     sessionSweepIntervalMs,
     allowLoopbackOrigins,
     allowedOrigins,
+    auth: {
+      apiKey
+    },
     logLevel: parseEnum(env.LOG_LEVEL, ["error", "info", "debug"], "info", "LOG_LEVEL"),
     logFormat: parseEnum(env.LOG_FORMAT, ["json", "plain"], "json", "LOG_FORMAT"),
     sqlServer: {

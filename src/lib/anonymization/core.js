@@ -11,6 +11,7 @@ const STRONG_KINDS = new Set(["email", "phone", "name", "iban", "date"]);
 const DEFAULT_MIN_CONFIDENCE = 0.8;
 const NONE_KIND = "__none__";
 const GLOBAL_CACHE_SCOPE = "__global__";
+const NO_TARGET_CACHE_SCOPE = "__no_target__";
 const LLM_KIND_CACHE_MAX_SIZE = 512;
 
 const SAFE_EXACT_KEYS = new Set([
@@ -274,8 +275,15 @@ function normalizeKind(kind) {
 }
 
 function normalizeCacheScope(scope) {
-  const value = String(scope || "").trim().toLowerCase();
+  const value = String(scope || "").trim();
   return value || GLOBAL_CACHE_SCOPE;
+}
+
+// Verdicts are never shared across targets: two targets may expose same-named columns with
+// different contents. Target ids are case-sensitive, so the id is not lowercased.
+function buildCacheScope(targetId, sqlText) {
+  const target = String(targetId || "").trim() || NO_TARGET_CACHE_SCOPE;
+  return `${JSON.stringify(target)}|${deriveCacheScopeFromSql(sqlText)}`;
 }
 
 function cacheKeyFor(normalizedKey, scope = GLOBAL_CACHE_SCOPE) {
@@ -412,7 +420,7 @@ function normalizeSqlSourceName(rawSource) {
 
 function deriveCacheScopeFromSql(sqlText) {
   const sql = String(sqlText || "");
-  const matches = [...sql.matchAll(/\b(?:from|join)\s+([A-Za-z0-9_\[\]".]+)/gi)];
+  const matches = [...sql.matchAll(/\b(?:from|join)\s+([A-Za-z0-9_[\]".]+)/gi)];
   const sources = [...new Set(matches.map(match => normalizeSqlSourceName(match[1])).filter(Boolean))];
   if (sources.length === 0) {
     return GLOBAL_CACHE_SCOPE;
@@ -422,7 +430,7 @@ function deriveCacheScopeFromSql(sqlText) {
 
 function extractSqlSources(sqlText) {
   const sql = String(sqlText || "");
-  const matches = [...sql.matchAll(/\b(?:from|join)\s+([A-Za-z0-9_\[\]".]+)/gi)];
+  const matches = [...sql.matchAll(/\b(?:from|join)\s+([A-Za-z0-9_[\]".]+)/gi)];
   return [...new Set(matches.map(match => normalizeSqlSourceName(match[1])).filter(Boolean))].sort();
 }
 
@@ -938,7 +946,7 @@ export async function anonymizeRows(rows, cfg, options = {}) {
   if (!Array.isArray(rows) || rows.length === 0) return [];
 
   const mode = String(cfg?.mode || "hybrid").toLowerCase();
-  const cacheScope = deriveCacheScopeFromSql(options?.sqlText);
+  const cacheScope = buildCacheScope(options?.targetId, options?.sqlText);
   const columnProfiles = buildColumnProfiles(rows);
   const resolveColumn = buildColumnResolver(options?.columnOrigins, options?.sqlText);
 
@@ -974,6 +982,7 @@ export async function anonymizeRows(rows, cfg, options = {}) {
 
 export const __anonymizationCoreTestUtils = {
   cacheMaxSize: LLM_KIND_CACHE_MAX_SIZE,
+  buildCacheScope,
   deriveCacheScopeFromSql,
   resetKindCache() {
     LLM_KIND_CACHE.clear();

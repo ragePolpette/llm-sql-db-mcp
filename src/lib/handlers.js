@@ -479,25 +479,55 @@ export function createHandlers({
           durationMs: result.duration_ms
         });
 
+        const anonymizeOutput = policy.anonymization_required && Array.isArray(result.rows) && result.rows.length > 0;
+        const finalResult = anonymizeOutput
+          ? await anonymizeQueryResult({
+              target,
+              queryResult: {
+                ...result,
+                sql_text: normalizedSql
+              },
+              providerConfig,
+              fetchImpl,
+              onReport: report =>
+                logDbEvent?.("anonymizer_decisions", {
+                  tool: "db_write",
+                  target_id: target.target_id,
+                  by_reason: report.by_reason,
+                  columns: report.columns,
+                  origins: report.origins
+                })
+            })
+          : {
+              ...result,
+              anonymization_applied: false,
+              anonymization_provider: "none",
+              anonymization_mode: target.anonymization_mode
+            };
+        delete finalResult.sql_text;
+
         logDbEvent?.("query_out", {
           tool: "db_write",
           target_id: target.target_id,
-          rowCount: result.row_count,
-          rowsAffected: result.rows_affected,
-          truncated: result.truncated,
+          rowCount: finalResult.row_count,
+          rowsAffected: finalResult.rows_affected,
+          truncated: finalResult.truncated,
+          anonymizationApplied: finalResult.anonymization_applied,
+          anonymizationProvider: finalResult.anonymization_provider,
+          anonymizationMode: finalResult.anonymization_mode,
           response: {
             success: true,
-            rowCount: result.row_count,
-            rowsAffected: result.rows_affected,
-            truncated: result.truncated,
-            rows: result.rows
+            rowCount: finalResult.row_count,
+            rowsAffected: finalResult.rows_affected,
+            truncated: finalResult.truncated,
+            rows: finalResult.rows
           }
         });
 
         return createJsonResult({
           target_id: target.target_id,
           sql: normalizedSql,
-          ...result
+          ...finalResult
         });
       } catch (error) {
         logDbEvent?.("query_failed", {

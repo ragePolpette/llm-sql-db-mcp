@@ -3,8 +3,9 @@ import { getRequestContext } from "./request-context.js";
 
 const LOG_LEVELS = {
   error: 0,
-  info: 1,
-  debug: 2
+  warn: 1,
+  info: 2,
+  debug: 3
 };
 const LOG_FORMATS = new Set(["json", "plain"]);
 
@@ -218,6 +219,13 @@ export function createLogger({
       }
 
       writeLine(stderr, buildEntry("error", event, payload));
+    },
+    warn(event, payload = {}) {
+      if (!shouldLog(normalizedLevel, "warn")) {
+        return;
+      }
+
+      writeLine(stderr, buildEntry("warn", event, payload));
     },
     info(event, payload = {}) {
       if (!shouldLog(normalizedLevel, "info")) {

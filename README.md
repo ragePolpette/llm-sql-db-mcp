@@ -61,7 +61,7 @@ Main runtime components:
 - `src/lib/config.js`: runtime configuration parsing and validation
 - `src/lib/target-registry.js`: target loading and normalization
 - `src/lib/policy-engine.js`: target-aware read, write, and anonymization decisions
-- `src/lib/sql-guard.js`: lexical and structural SQL guard rails
+- `src/lib/sql-guard.js`: single-pass T-SQL tokenizer and structural SQL guard rails
 - `src/lib/drivers/sqlserver.js`: SQL Server execution through `mssql`
 - `src/lib/anonymization/`: deterministic masking and field classification
 
@@ -106,6 +106,8 @@ cp .env.example .env
 npm start
 ```
 
+If any active target has anonymization enabled (the shipped `targets.json` does), set `ANON_HASH_SALT` first: the server refuses to start without it.
+
 The server reads `targets.json` by default. See [targets.example.json](targets.example.json) for a sample registry. Each target names the environment variable that holds its connection string (`connection_env_var`); set that variable in the shell that starts the server, not in `.env`.
 
 HTTP endpoints:
@@ -119,34 +121,61 @@ HTTP endpoints:
 Runtime settings are read from environment variables. [.env.example](.env.example) lists the supported ones with defaults. Key settings:
 
 - `HOST`, `PORT`
+- `DB_MCP_API_KEY` (optional, runtime environment only): see [Authentication](#authentication)
 - `TARGETS_FILE`
 - `SESSION_TTL_MS`
 - `ALLOWED_ORIGINS`
 - `LOG_LEVEL`, `LOG_FORMAT`
-- `ANON_HASH_SALT`
+- `ANON_HASH_SALT`: required at startup when any active target has anonymization enabled
 - `ANON_FIELD_IDENTIFICATION`
 - `ANON_FAIL_OPEN`
 - `ANON_TIMEOUT_MS`
 - `ANON_MIN_CONFIDENCE` (0-1, default 0.8): a provider `none` verdict below this confidence is ignored and the column is masked
 - `ANON_CATALOG_PATH` (optional): enables the self-populating column catalog; keep it outside the repository because it contains schema names
 
-Per-target overrides can be supplied through `TARGET_<TARGET_ID>_...` environment variables for read, write, and anonymization behavior.
+Per-target overrides can be supplied through `TARGET_<TARGET_ID>_...` environment variables for read, write, and anonymization behavior. On `prod` targets, overrides that would enable writes (`TARGET_<ID>_WRITE_ENABLED=true`) or disable anonymization (`TARGET_<ID>_ANONYMIZATION_ENABLED=false`) are ignored and a `target.prod_override_ignored` warning is logged.
 
 Targets with anonymization enabled also accept `anonymization_trust` (`corroborated` by default, or `strict`). `strict` ignores any provider "not sensitive" verdict on columns that are not recognized deterministically, so those string columns are masked. Anonymization decisions are logged per reason (`db.anonymizer_decisions`) without values.
 
 Connection strings, API keys, passwords, and other secrets must not live in the repository `.env`.
 
+### Authentication
+
+By default the server accepts unauthenticated requests and binds to `127.0.0.1`. Setting `DB_MCP_API_KEY` in the runtime environment enables a static shared token at the HTTP edge: every request except the liveness probe `GET /health` (which only reports that the process is up) must then send either `Authorization: Bearer <token>` or `x-api-key: <token>`, otherwise it gets `401` with error code `unauthorized`. The comparison is timing-safe.
+
+Binding `HOST` to anything other than a loopback address (`127.0.0.0/8`, `::1`, `localhost`) requires `DB_MCP_API_KEY`; without it the server refuses to start. `DB_MCP_API_KEY` is a secret, so it is rejected if placed in the repository `.env`.
+
+This is a single shared token, not per-user identity. See [docs/AUTH_FUTURE_INTEGRATION.md](docs/AUTH_FUTURE_INTEGRATION.md) for the possible next steps.
+
 ### Target registry
 
 The runtime reads targets from `targets.json`. Each target defines:
 
-- `target_id`, `display_name`, `environment`, `status`
+- `target_id`, `display_name`, `environment`, `status`; `environment` must be one of `dev`, `test`, `qa`, `uat`, `staging`, `prod` (case-insensitive; `development` and `production` are accepted as aliases)
 - safe metadata
 - the environment variable that holds its connection string
 - read and write permissions
 - anonymization configuration
 
 The example registry in [targets.example.json](targets.example.json) contains a dev read/write target, a prod read-only target with anonymization, and a disabled target.
+
+### Production fence
+
+Targets with `environment=prod` are always read-only, whatever the registry or the environment says:
+
+- `write_enabled` is forced to `false` and `db_write` is removed from `allowed_tools`, with a warning logged at startup
+- the policy engine denies `db_write` on prod targets even if a target object reaches it unfenced
+- env overrides that would re-enable writes or disable anonymization are ignored
+- `anonymization_enabled=false` in the registry is still honored, because it is an explicit operator choice, but a `target.prod_anonymization_disabled` warning is logged at startup
+
+### SQL guard and result limits
+
+`db_read` accepts exactly one `SELECT` statement (optionally behind a CTE); `db_write` accepts exactly one `INSERT`, `UPDATE`, `DELETE`, or `MERGE`. The guard tokenizes the SQL in a single pass (string literals with `''` escapes, `N'...'`, `[...]` and `"..."` identifiers, `--` and nested `/* */` comments), so quoting and comments cannot hide a second statement. Batches with more than one statement, a `;` followed by more code, the `GO` separator, DDL, `EXEC`, `SELECT ... INTO`, transaction control, `OPENROWSET`/`OPENQUERY`/`OPENDATASOURCE`, and other non-DML statements are rejected. Unterminated literals or comments and unbalanced parentheses are rejected as well.
+
+`db_read` streams the first result set and stops reading as soon as `max_rows` or `max_result_bytes` is exceeded, so at most `max_rows + 1` rows are ever held in memory. Streaming was chosen over rewriting the query with `TOP (n)` because it works for every statement the guard accepts (CTEs, `UNION`, `ORDER BY ... OFFSET/FETCH`, an existing `TOP`) without altering the caller's SQL. `total_rows_before_limits` therefore counts the rows read, at most `max_rows + 1`, not the full size of the result. Each read runs in an explicit `READ COMMITTED` transaction that is always rolled back.
+
+When a target requires anonymization, rows returned by `db_write` (an `OUTPUT` clause) are anonymized the same way as `db_read` results.
+
 
 ## Usage
 
@@ -177,7 +206,9 @@ Output anonymization protects against accidental exposure to a client acting in 
 
 The goal is to reduce operational mistakes and unsafe MCP usage inside a controlled environment. It is not a public-cloud data access platform.
 
-See [SECURITY.md](SECURITY.md) for the threat model and reporting instructions, and [docs/AUTH_FUTURE_INTEGRATION.md](docs/AUTH_FUTURE_INTEGRATION.md) for the planned authentication boundary.
+When anonymization uses an LLM provider, raw sample values from the result columns are sent to the configured local provider (LM Studio or Ollama) during classification. Italian fiscal codes and VAT numbers are treated as safe identifiers by design. Both points are explained in [SECURITY.md](SECURITY.md).
+
+See [SECURITY.md](SECURITY.md) for the threat model and reporting instructions, and [docs/AUTH_FUTURE_INTEGRATION.md](docs/AUTH_FUTURE_INTEGRATION.md) for the authentication boundary.
 
 ## Development
 
@@ -187,7 +218,7 @@ npm run check
 npm test
 ```
 
-`npm run check` runs `node --check` on the source files. `npm test` runs the Node.js test runner. Tests use synthetic data and do not need a SQL Server instance. See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
+`npm run check` runs `node --check` on the source files and then ESLint (`npm run lint`, flat config with `@eslint/js` recommended rules). `npm test` runs the Node.js test runner. Tests use synthetic data and do not need a SQL Server instance. See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
 
 Further documentation:
 

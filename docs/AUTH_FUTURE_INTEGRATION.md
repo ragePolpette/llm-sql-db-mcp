@@ -1,6 +1,6 @@
 # Future Auth Integration
 
-This note describes how optional authentication could be added to `llm-sql-db-mcp` without reworking the query engine or changing the MCP surface. Nothing described here is implemented in the current runtime.
+This note describes how optional authentication could be added to `llm-sql-db-mcp` without reworking the query engine or changing the MCP surface. Only the `static-bearer` mode is implemented today, through `DB_MCP_API_KEY` (see [Implemented: static bearer](#implemented-static-bearer)); everything else is a design note.
 
 Goals:
 
@@ -10,7 +10,7 @@ Goals:
 
 Non-goals:
 
-- implementing authentication in the current runtime
+- implementing identity-aware authentication in the current runtime
 - turning the project into a public or multi-tenant service
 
 ## Current posture
@@ -23,12 +23,18 @@ The server currently assumes:
 
 The absence of strong authentication is a scope decision, not an architectural omission.
 
+## Implemented: static bearer
+
+When `DB_MCP_API_KEY` is set in the runtime environment, an Express middleware in `src/server.js` requires `Authorization: Bearer <token>` or `x-api-key: <token>` on every request, before MCP session resolution and before any route, and compares the token in constant time. Requests without a valid token get `401` with error code `unauthorized`.
+
+Binding to a non-loopback `HOST` without `DB_MCP_API_KEY` is refused at startup, so the server cannot be exposed on a network interface without at least this boundary. The token is a single shared secret: it carries no principal and does not change target policies.
+
 ## Possible modes
 
 If the project moves beyond local use, reasonable modes are:
 
 - `off`: the current default for controlled local use
-- `static-bearer`: a simple shared token for limited internal networks
+- `static-bearer`: a simple shared token for limited internal networks (implemented through `DB_MCP_API_KEY`)
 - `jwt`: a signed bearer with issuer and audience verified behind a reverse proxy or internal IdP
 - `proxy-auth`: explicit trust of identity headers injected by an authenticated reverse proxy
 

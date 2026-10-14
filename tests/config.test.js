@@ -128,3 +128,25 @@ test("ANON_MIN_CONFIDENCE defaults to 0.8 and rejects out-of-range values", () =
     /ANON_MIN_CONFIDENCE/
   );
 });
+
+test("loadRuntimeConfig reads DB_MCP_API_KEY and refuses non-loopback binds without it", () => {
+  const cwd = createTempDir();
+
+  assert.equal(loadRuntimeConfig({ cwd, env: {} }).auth.apiKey, null);
+  assert.equal(loadRuntimeConfig({ cwd, env: { DB_MCP_API_KEY: "  secret-token  " } }).auth.apiKey, "secret-token");
+
+  for (const host of ["127.0.0.1", "127.0.1.1", "localhost", "::1", "[::1]"]) {
+    assert.equal(loadRuntimeConfig({ cwd, env: { HOST: host } }).host, host);
+  }
+
+  for (const host of ["0.0.0.0", "::", "192.168.1.10", "db-mcp.internal"]) {
+    assert.throws(() => loadRuntimeConfig({ cwd, env: { HOST: host } }), /DB_MCP_API_KEY is required/);
+    assert.equal(loadRuntimeConfig({ cwd, env: { HOST: host, DB_MCP_API_KEY: "secret-token" } }).host, host);
+  }
+});
+
+test("DB_MCP_API_KEY cannot be stored in the project .env", () => {
+  const cwd = createTempDir();
+  fs.writeFileSync(path.join(cwd, ".env"), "DB_MCP_API_KEY=secret-token\n", "utf8");
+  assert.throws(() => loadRuntimeConfig({ cwd, env: {} }), /Forbidden secret keys/i);
+});

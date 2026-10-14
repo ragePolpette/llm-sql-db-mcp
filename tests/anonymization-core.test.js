@@ -446,3 +446,40 @@ test("KNOWN LIMITATION: non-string values derived from sensitive columns are ret
   assert.equal(row.anno, 1980, "the birth year leaks");
   assert.equal(row.n, 3, "COUNT(*) over a sensitive predicate leaks");
 });
+
+test("a provider verdict cached for one target is not reused for another target", async () => {
+  __anonymizationCoreTestUtils.resetKindCache();
+  const sqlText = "SELECT Descrizione FROM dbo.Movimenti";
+  const columnOrigins = { Descrizione: { schema: "dbo", table: "Movimenti", column: "Descrizione" } };
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls += 1;
+    return {
+      ok: true,
+      async json() {
+        return { message: { content: JSON.stringify({ fields: { Descrizione: { kind: "none", confidence: 0.99 } } }) } };
+      }
+    };
+  };
+
+  const [devRow] = await anonymizeRows([{ Descrizione: "Pagamento fattura" }], llmCfg(), { sqlText, columnOrigins, targetId: "dev-main", fetchImpl });
+  assert.equal(devRow.Descrizione, "Pagamento fattura");
+  assert.equal(calls, 1);
+
+  const failingFetch = async () => {
+    calls += 1;
+    throw new Error("provider down");
+  };
+  const [prodRow] = await anonymizeRows([{ Descrizione: "Mario Rossi" }], llmCfg(), { sqlText, columnOrigins, targetId: "prod-main", fetchImpl: failingFetch });
+  assert.equal(calls, 2, "the prod target must ask the provider instead of reusing the dev verdict");
+  assert.match(prodRow.Descrizione, /^TEXT_/);
+
+  const keys = __anonymizationCoreTestUtils.getKindCacheKeys();
+  assert.equal(keys.length, 1);
+  assert.ok(keys[0].startsWith('"dev-main"|'));
+});
+
+test("cache scopes keep case-distinct target ids apart", () => {
+  const { buildCacheScope } = __anonymizationCoreTestUtils;
+  assert.notEqual(buildCacheScope("client-a", "SELECT 1 FROM t"), buildCacheScope("CLIENT-A", "SELECT 1 FROM t"));
+});

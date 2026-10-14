@@ -1,4 +1,4 @@
-import * as z from "zod/v4";
+import * as z from "zod";
 import { getTargetScopedTools } from "./policy-engine.js";
 
 const targetSummarySchema = z.object({
@@ -13,16 +13,6 @@ const targetSummarySchema = z.object({
   anonymization_enabled: z.boolean(),
   llm_provider: z.string(),
   llm_model: z.string()
-});
-
-const targetInfoSchema = targetSummarySchema.extend({
-  allowed_tools: z.array(z.string()),
-  anonymization_mode: z.string(),
-  anonymization_trust: z.string().optional(),
-  effective_limits: z.object({
-    max_rows: z.number().int().positive(),
-    max_result_bytes: z.number().int().positive().nullable()
-  })
 });
 
 const policyRowSchema = z.object({
@@ -271,6 +261,10 @@ export function registerFixedTools(server, handlers) {
       outputSchema: {
         target_id: z.string(),
         sql: z.string(),
+        anonymization_applied: z.boolean(),
+        anonymization_provider: z.string(),
+        anonymization_mode: z.string(),
+        anonymization_notes: z.array(z.string()).optional(),
         columns: z.array(
           z.object({
             name: z.string(),

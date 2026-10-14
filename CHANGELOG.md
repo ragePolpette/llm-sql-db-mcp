@@ -6,6 +6,28 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 ## [Unreleased]
 
+### Security
+- SQL guard rewritten as a single-pass T-SQL tokenizer. The previous regex chain stripped comments before string literals, so `SELECT '--'; DROP TABLE t` and `SELECT 1 AS [a']; DROP TABLE t; SELECT ']'` passed the read guard. Multi-statement batches (any `;` followed by more code, or a second top-level statement without `;`), `GO`, unterminated literals or comments, unbalanced parentheses, transaction control, `DECLARE`, `SET` in reads, `WAITFOR`, `OPENROWSET`/`OPENQUERY`/`OPENDATASOURCE` and other non-DML statements are now rejected. Queries that used one of these keywords as a bare identifier must quote it (`[name]`).
+- Production fence is enforced in code: `environment` must be one of `dev`, `test`, `qa`, `uat`, `staging`, `prod` (case-insensitive, aliases `development` and `production`); other values now fail at startup. On `prod` targets `write_enabled` is forced to `false`, `db_write` is removed from `allowed_tools`, the policy engine always denies `db_write`, and `TARGET_<ID>_WRITE_ENABLED=true` / `TARGET_<ID>_ANONYMIZATION_ENABLED=false` are ignored with a warning. A prod target with `anonymization_enabled=false` in the registry is still accepted, with a startup warning. `db_write` was removed from the prod target in `targets.json`.
+- Rows returned by `db_write` (an `OUTPUT` clause) are now anonymized when the target requires anonymization; `db_write` responses include the `anonymization_*` fields.
+- The in-memory cache of provider field verdicts is keyed by `target_id` as well as by query sources, so a verdict obtained on one target is never reused on another.
+- Optional static token at the HTTP edge: when `DB_MCP_API_KEY` is set, every request needs `Authorization: Bearer <token>` or `x-api-key: <token>` (timing-safe comparison). Starting with a non-loopback `HOST` and no `DB_MCP_API_KEY` is now refused. The Express app now receives the configured host, so the SDK localhost Host-header check applies only to loopback binds.
+- `ANON_HASH_SALT` is validated at startup when any active target has anonymization enabled; previously the server started and failed on the first masked value.
+- Documented that raw sample values are sent to the local LLM provider during classification and that fiscal codes and VAT numbers are treated as safe identifiers by design (SECURITY.md).
+
+### Changed
+- `db_read` streams the first result set and stops at `max_rows + 1` rows or at `max_result_bytes`, instead of loading the whole result in memory. `total_rows_before_limits` now counts rows read (at most `max_rows + 1`), not the full result size.
+- `db_read` runs in an explicit `READ COMMITTED` transaction that is always rolled back.
+- Concurrent first requests to a target share a single connection pool; a failed connection attempt is no longer cached.
+- LM Studio and Ollama share one HTTP client with per-provider adapters. Timeouts now abort with a recognizable `AbortError` and also cover reading the response body.
+- Shutdown forces a flush of the anonymization catalog and logs `anon.catalog_flush_failed` with the catalog error.
+- Output byte clamping after anonymization is linear instead of quadratic.
+- A single `zod` import style is used across the code base.
+- The logger gained a `warn` level.
+
+### Added
+- ESLint (flat config, `@eslint/js` recommended) with `npm run lint`, included in `npm run check` and therefore in CI.
+
 ### Added
 - Anonymization catalog (phase B): when `ANON_CATALOG_PATH` is set, every anonymized `db_read` records, per `target_id` and per source column (`schema.table.column`), which verdict was applied plus hashed evidence (no raw values; file mode 0600). Unknown columns start `pending`; a column is auto-promoted to `auto-safe` only after >=3 uses / >=30 cells of a closed, repeated, short, non-Title-Case, PII-free value set, and is re-checked on every result. Machine `auto-safe` evidence is never shared across targets.
 - `npm run anon:catalog` CLI to review (`list`, `human`) and decide (`set <col> safe|sensitive --kind`, `unset`). Human verdicts are shared by all targets and override heuristics; they are deliberately not exposed through MCP tools. The running server reloads them without restart.

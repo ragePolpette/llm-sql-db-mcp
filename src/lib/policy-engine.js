@@ -1,3 +1,5 @@
+import { isProductionTarget } from "./target-registry.js";
+
 const TARGET_SCOPED_TOOLS = ["db_target_info", "db_policy_info", "db_read", "db_write"];
 
 function clone(value) {
@@ -76,6 +78,15 @@ export function evaluateToolPolicy({ target, toolName }) {
     };
   }
 
+  if (normalizedToolName === "db_write" && isProductionTarget(target)) {
+    return {
+      tool_name: normalizedToolName,
+      allowed: false,
+      anonymization_required: false,
+      denial_reason: `Write access is hard-fenced off for prod target "${target.target_id}".`
+    };
+  }
+
   if (!target.allowed_tools.includes(normalizedToolName)) {
     return {
       tool_name: normalizedToolName,
@@ -106,7 +117,7 @@ export function evaluateToolPolicy({ target, toolName }) {
   return {
     tool_name: normalizedToolName,
     allowed: true,
-    anonymization_required: normalizedToolName === "db_read" && target.anonymization_enabled,
+    anonymization_required: target.anonymization_enabled && ["db_read", "db_write"].includes(normalizedToolName),
     denial_reason: null
   };
 }

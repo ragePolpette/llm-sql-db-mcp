@@ -40,8 +40,7 @@
       "allowed_tools": [
         "db_target_info",
         "db_policy_info",
-        "db_read",
-        "db_write"
+        "db_read"
       ]
     }
   ]
