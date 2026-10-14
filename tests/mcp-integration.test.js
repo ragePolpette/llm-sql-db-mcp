@@ -34,11 +34,13 @@ test("integration: health, tool surface, target tools, and db_read error path wo
   const port = await getFreePort();
   const originalEnv = {
     PORT: process.env.PORT,
+    ANON_HASH_SALT: process.env.ANON_HASH_SALT,
     DB_DEV_MAIN_CONNECTION_STRING: process.env.DB_DEV_MAIN_CONNECTION_STRING,
     DB_PROD_MAIN_CONNECTION_STRING: process.env.DB_PROD_MAIN_CONNECTION_STRING
   };
 
   process.env.PORT = String(port);
+  process.env.ANON_HASH_SALT = "integration-test-salt";
   delete process.env.DB_DEV_MAIN_CONNECTION_STRING;
   delete process.env.DB_PROD_MAIN_CONNECTION_STRING;
 
@@ -122,6 +124,12 @@ test("integration: health, tool surface, target tools, and db_read error path wo
       delete process.env.PORT;
     } else {
       process.env.PORT = originalEnv.PORT;
+    }
+
+    if (originalEnv.ANON_HASH_SALT === undefined) {
+      delete process.env.ANON_HASH_SALT;
+    } else {
+      process.env.ANON_HASH_SALT = originalEnv.ANON_HASH_SALT;
     }
 
     if (originalEnv.DB_DEV_MAIN_CONNECTION_STRING === undefined) {

@@ -7,6 +7,8 @@ import {
   executeSqlServerRead
 } from "../src/lib/drivers/sqlserver.js";
 import { anonymizeQueryResult } from "../src/lib/anonymizer.js";
+import sql from "mssql";
+import { createFakePool } from "./helpers/fake-mssql.js";
 
 test("buildSqlServerConnectionConfig maps runtime config to mssql pool settings", () => {
   const config = buildSqlServerConnectionConfig("Server=.;Database=App;", {
@@ -76,29 +78,6 @@ test("describeParameterType maps JS values to T-SQL types and rejects unsupporte
   assert.equal(__sqlServerTestUtils.describeParameterType(undefined), "nvarchar(max)");
   assert.equal(__sqlServerTestUtils.describeParameterType({}), null);
 });
-
-function createFakePool({ describeRows, describeError = null, dataRows }) {
-  const describeCalls = [];
-  return {
-    describeCalls,
-    request() {
-      const inputs = {};
-      return {
-        input(name, typeOrValue, value) {
-          inputs[name] = value === undefined ? typeOrValue : value;
-        },
-        async query(sqlText) {
-          if (sqlText.includes("dm_exec_describe_first_result_set")) {
-            describeCalls.push({ ...inputs });
-            if (describeError) throw describeError;
-            return { recordset: describeRows };
-          }
-          return { recordset: dataRows };
-        }
-      };
-    }
-  };
-}
 
 const ALIAS_SQL = "SELECT cognome AS tipo, nome AS stato FROM dbo.u WHERE codice = @p";
 const ALIAS_ROWS = [{ tipo: "Rossi", stato: "Mario" }];
@@ -237,4 +216,92 @@ test("a describe error row masks aliased values and tells the client why", async
   assert.equal(result.anonymization_notes[0].includes("could not be determined"), false, "raw SQL Server text stays out of the response");
   assert.equal(report.origins.status, "unavailable");
   assert.equal(report.origins.detail, "could not be determined");
+});
+
+async function readWithPool(pool, options) {
+  __sqlServerTestUtils.resetPoolCache();
+  __sqlServerTestUtils.setCachedPool("stream-db", pool);
+  try {
+    return await executeSqlServerRead({ connectionString: "stream-db", sqlText: "SELECT id FROM dbo.big", ...options });
+  } finally {
+    __sqlServerTestUtils.resetPoolCache();
+  }
+}
+
+test("db_read streams rows and stops reading once max_rows is exceeded", async () => {
+  const stats = {};
+  const dataRows = Array.from({ length: 1000 }, (_, id) => ({ id }));
+  const result = await readWithPool(createFakePool({ dataRows, stats }), { maxRows: 5, maxResultBytes: null });
+
+  assert.equal(stats.streamMode, true);
+  assert.equal(stats.rowsEmitted, 6, "at most max_rows + 1 rows are read from the server");
+  assert.equal(result.row_count, 5);
+  assert.equal(result.total_rows_before_limits, 6);
+  assert.equal(result.truncated, true);
+  assert.deepEqual(result.columns, [{ name: "id", nullable: true, type: "NVarChar" }]);
+});
+
+test("db_read stops reading once the byte limit is exceeded", async () => {
+  const stats = {};
+  const dataRows = Array.from({ length: 1000 }, (_, id) => ({ id, pad: "x".repeat(100) }));
+  const result = await readWithPool(createFakePool({ dataRows, stats }), { maxRows: 1000, maxResultBytes: 500 });
+
+  assert.ok(stats.rowsEmitted < 10);
+  assert.ok(result.row_count > 0 && result.row_count < 5);
+  assert.ok(result.result_bytes <= 500);
+  assert.equal(result.truncated, true);
+});
+
+test("db_read is not truncated when the result fits exactly", async () => {
+  const result = await readWithPool(createFakePool({ dataRows: [{ id: 1 }, { id: 2 }] }), { maxRows: 2, maxResultBytes: null });
+  assert.equal(result.row_count, 2);
+  assert.equal(result.truncated, false);
+});
+
+test("db_read runs in a READ COMMITTED transaction that is always rolled back", async () => {
+  const stats = {};
+  await readWithPool(createFakePool({ dataRows: [{ id: 1 }], stats }), { maxRows: 5, maxResultBytes: null });
+  assert.equal(stats.begun, sql.ISOLATION_LEVEL.READ_COMMITTED);
+  assert.equal(stats.rolledBack, true);
+  assert.equal(stats.committed, false);
+
+  const failing = {};
+  await assert.rejects(
+    readWithPool(createFakePool({ dataRows: [], error: new Error("boom"), stats: failing }), { maxRows: 5, maxResultBytes: null }),
+    /boom/
+  );
+  assert.equal(failing.rolledBack, true);
+});
+
+test("concurrent first requests share a single pool and failed connects are not cached", async () => {
+  __sqlServerTestUtils.resetPoolCache();
+  let created = 0;
+  let fail = true;
+  __sqlServerTestUtils.setPoolFactory(async () => {
+    created += 1;
+    await new Promise(resolve => setTimeout(resolve, 10));
+    if (fail) throw new Error("connect failed");
+    return { id: created, async close() {} };
+  });
+
+  try {
+    const results = await Promise.allSettled([
+      __sqlServerTestUtils.getPool("Server=.;Database=Race;"),
+      __sqlServerTestUtils.getPool("Server=.;Database=Race;")
+    ]);
+    assert.equal(created, 1);
+    assert.ok(results.every(r => r.status === "rejected"));
+    assert.equal(__sqlServerTestUtils.getPoolCacheSize(), 0);
+
+    fail = false;
+    const [first, second] = await Promise.all([
+      __sqlServerTestUtils.getPool("Server=.;Database=Race;"),
+      __sqlServerTestUtils.getPool("Server=.;Database=Race;")
+    ]);
+    assert.equal(created, 2);
+    assert.equal(first, second);
+  } finally {
+    __sqlServerTestUtils.setPoolFactory(null);
+    __sqlServerTestUtils.resetPoolCache();
+  }
 });

@@ -4,7 +4,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { anonymizeRows } from "../src/lib/anonymizer.js";
-import { createCatalog, isEnumEvidence } from "../src/lib/anonymization/catalog.js";
+import {
+  __catalogTestUtils,
+  createCatalog,
+  flushAllCatalogs,
+  getCatalog,
+  isEnumEvidence
+} from "../src/lib/anonymization/catalog.js";
 import { runCli } from "../src/cli/anon-catalog.js";
 
 const CFG = {
@@ -183,4 +189,22 @@ test("CLI list shows pending columns most used first and rejects bad input", asy
   assert.equal(runCli(["list"], io), 2);
   assert.match(err, /--kind/);
   assert.match(err, /No catalog file/);
+});
+
+test("flushAllCatalogs forces throttled observations to disk", () => {
+  __catalogTestUtils.resetCatalogCache();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "catalog-flush-"));
+  const filePath = path.join(dir, "catalog.json");
+  const catalog = getCatalog(filePath);
+  const observation = key => ({ key, status: "pending", kind: null, reason: "fallback:unknown-text", cells: 1, hashes: ["AA"], max_len: 3, pii: false, titlecase: false });
+
+  catalog.record("dev-main", [observation("dbo.t.first")]);
+  catalog.record("dev-main", [observation("dbo.t.second")]);
+  const beforeFlush = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  assert.equal("dbo.t.second" in beforeFlush.targets["dev-main"], false, "second record is throttled");
+
+  assert.deepEqual(flushAllCatalogs(), []);
+  const afterFlush = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  assert.ok("dbo.t.second" in afterFlush.targets["dev-main"]);
+  __catalogTestUtils.resetCatalogCache();
 });

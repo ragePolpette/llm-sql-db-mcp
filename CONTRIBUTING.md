@@ -38,7 +38,7 @@ npm run check
 npm test
 ```
 
-Tests use synthetic data and do not need a SQL Server instance. CI runs `npm run check` and `npm test` on pushes to `main` and on pull requests.
+Tests use synthetic data and do not need a SQL Server instance. `npm run check` includes ESLint (`npm run lint`). CI runs `npm run check` and `npm test` on pushes to `main` and on pull requests.
 
 ## Change scope
 

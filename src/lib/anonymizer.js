@@ -20,16 +20,20 @@ function computeRowsByteLength(rows) {
   return Buffer.byteLength(JSON.stringify(rows), "utf8");
 }
 
+// Mirrors JSON.stringify(rows): "[" + rows joined by "," + "]", measured one row at a time.
 function clampRowsToByteLimit(rows, maxResultBytes) {
-  if (maxResultBytes === null) return rows;
+  if (maxResultBytes === null || maxResultBytes === undefined) return rows;
   const acceptedRows = [];
+  let resultBytes = 2;
 
   for (const row of rows) {
-    const nextRows = [...acceptedRows, row];
-    if (computeRowsByteLength(nextRows) > maxResultBytes) {
+    const rowBytes = Buffer.byteLength(JSON.stringify(row) ?? "null", "utf8");
+    const separatorBytes = acceptedRows.length === 0 ? 0 : 1;
+    if (resultBytes + separatorBytes + rowBytes > maxResultBytes) {
       break;
     }
 
+    resultBytes += separatorBytes + rowBytes;
     acceptedRows.push(row);
   }
 

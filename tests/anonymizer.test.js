@@ -124,3 +124,21 @@ test("anonymizeQueryResult forwards the decision report to onReport", async () =
   });
   assert.equal(report.by_reason["heuristic:email"], 1);
 });
+
+test("clampRowsToByteLimit matches the serialized size exactly", () => {
+  const rows = [{ a: "è" }, { b: 2 }, { c: null }];
+  const total = Buffer.byteLength(JSON.stringify(rows), "utf8");
+  assert.deepEqual(__anonymizerTestUtils.clampRowsToByteLimit(rows, total), rows);
+  assert.deepEqual(__anonymizerTestUtils.clampRowsToByteLimit(rows, total - 1), rows.slice(0, 2));
+  assert.deepEqual(__anonymizerTestUtils.clampRowsToByteLimit(rows, 2), []);
+  assert.deepEqual(__anonymizerTestUtils.clampRowsToByteLimit(rows, Buffer.byteLength(JSON.stringify([rows[0]]))), [rows[0]]);
+});
+
+test("clampRowsToByteLimit runs in linear time", () => {
+  const rows = Array.from({ length: 8000 }, (_, id) => ({ id, label: `row-${id}-${"x".repeat(40)}` }));
+  const startedAt = performance.now();
+  const clamped = __anonymizerTestUtils.clampRowsToByteLimit(rows, 10_000_000);
+  const elapsedMs = performance.now() - startedAt;
+  assert.equal(clamped.length, rows.length);
+  assert.ok(elapsedMs < 1000, `took ${elapsedMs}ms`);
+});

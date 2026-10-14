@@ -135,12 +135,12 @@ test("loadTargetRegistry applies per-target env overrides", async () => {
   const filePath = writeTempTargetsFile({
     targets: [
       {
-        target_id: "prod-main",
-        display_name: "Prod Main",
-        environment: "prod",
+        target_id: "stage-main",
+        display_name: "Stage Main",
+        environment: "staging",
         db_kind: "sqlserver",
         status: "active",
-        connection_env_var: "DB_PROD_MAIN_CONNECTION_STRING",
+        connection_env_var: "DB_STAGE_MAIN_CONNECTION_STRING",
         read_enabled: true,
         write_enabled: false,
         anonymization_enabled: true,
@@ -156,14 +156,14 @@ test("loadTargetRegistry applies per-target env overrides", async () => {
 
   const registry = await loadTargetRegistry(filePath, {
     env: {
-      TARGET_PROD_MAIN_WRITE_ENABLED: "true",
-      TARGET_PROD_MAIN_ANONYMIZATION_ENABLED: "false",
-      TARGET_PROD_MAIN_LLM_PROVIDER: "ollama",
-      TARGET_PROD_MAIN_LLM_MODEL: "gemma3:4b"
+      TARGET_STAGE_MAIN_WRITE_ENABLED: "true",
+      TARGET_STAGE_MAIN_ANONYMIZATION_ENABLED: "false",
+      TARGET_STAGE_MAIN_LLM_PROVIDER: "ollama",
+      TARGET_STAGE_MAIN_LLM_MODEL: "gemma3:4b"
     }
   });
 
-  const target = registry.get("prod-main");
+  const target = registry.get("stage-main");
   assert.equal(target.write_enabled, true);
   assert.equal(target.anonymization_enabled, false);
   assert.equal(target.anonymization_mode, "off");
@@ -279,4 +279,92 @@ test("loadTargetRegistry defaults anonymization_trust to corroborated and honour
   await assert.rejects(
     () => loadTargetRegistry(filePath, { env: { TARGET_PROD_MAIN_ANONYMIZATION_TRUST: "yolo" } })
   );
+});
+
+function prodTarget(overrides = {}) {
+  return {
+    target_id: "prod-main",
+    display_name: "Prod Main",
+    environment: "prod",
+    db_kind: "sqlserver",
+    status: "active",
+    connection_env_var: "DB_PROD_MAIN_CONNECTION_STRING",
+    read_enabled: true,
+    write_enabled: false,
+    anonymization_enabled: true,
+    anonymization_mode: "hybrid",
+    llm_provider: "lmstudio",
+    llm_model: "google/gemma-3-4b",
+    max_rows: 100,
+    max_result_bytes: 1024,
+    allowed_tools: ["db_target_info", "db_policy_info", "db_read"],
+    ...overrides
+  };
+}
+
+function captureWarnings() {
+  const warnings = [];
+  return { warnings, logger: { warn: (event, payload) => warnings.push({ event, payload }) } };
+}
+
+test("prod fence forces write_enabled off and removes db_write from the targets file", async () => {
+  const filePath = writeTempTargetsFile({
+    targets: [prodTarget({ write_enabled: true, allowed_tools: ["db_read", "db_write"] })]
+  });
+  const { warnings, logger } = captureWarnings();
+
+  const target = (await loadTargetRegistry(filePath, { env: {}, logger })).get("prod-main");
+
+  assert.equal(target.write_enabled, false);
+  assert.deepEqual(target.allowed_tools, ["db_read"]);
+  assert.deepEqual(warnings.map(w => w.event).sort(), ["target.prod_write_disabled", "target.prod_write_tool_removed"]);
+});
+
+test("prod fence ignores env overrides that would enable writes or disable anonymization", async () => {
+  const filePath = writeTempTargetsFile({ targets: [prodTarget()] });
+  const { warnings, logger } = captureWarnings();
+
+  const target = (await loadTargetRegistry(filePath, {
+    env: {
+      TARGET_PROD_MAIN_WRITE_ENABLED: "true",
+      TARGET_PROD_MAIN_ANONYMIZATION_ENABLED: "false"
+    },
+    logger
+  })).get("prod-main");
+
+  assert.equal(target.write_enabled, false);
+  assert.equal(target.anonymization_enabled, true);
+  assert.equal(target.llm_provider, "lmstudio");
+  const ignored = warnings.filter(w => w.event === "target.prod_override_ignored").map(w => w.payload.env_var).sort();
+  assert.deepEqual(ignored, ["TARGET_PROD_MAIN_ANONYMIZATION_ENABLED", "TARGET_PROD_MAIN_WRITE_ENABLED"]);
+});
+
+test("a prod target may disable anonymization in the targets file but a startup warning is logged", async () => {
+  const filePath = writeTempTargetsFile({
+    targets: [prodTarget({ anonymization_enabled: false, anonymization_mode: "off", llm_provider: "none", llm_model: "" })]
+  });
+  const { warnings, logger } = captureWarnings();
+
+  const target = (await loadTargetRegistry(filePath, { env: {}, logger })).get("prod-main");
+
+  assert.equal(target.anonymization_enabled, false);
+  assert.deepEqual(warnings.map(w => w.event), ["target.prod_anonymization_disabled"]);
+});
+
+test("environment is validated against an enum and production aliases stay fenced", async () => {
+  const aliasPath = writeTempTargetsFile({
+    targets: [prodTarget({ environment: " Production ", write_enabled: true, allowed_tools: ["db_read", "db_write"] })]
+  });
+  const aliased = (await loadTargetRegistry(aliasPath, { env: {} })).get("prod-main");
+  assert.equal(aliased.environment, "prod");
+  assert.equal(aliased.write_enabled, false);
+  assert.deepEqual(aliased.allowed_tools, ["db_read"]);
+
+  for (const environment of ["dev", "test", "qa", "uat", "staging", "DEV"]) {
+    const filePath = writeTempTargetsFile({ targets: [prodTarget({ environment })] });
+    assert.equal((await loadTargetRegistry(filePath, { env: {} })).get("prod-main").environment, environment.toLowerCase());
+  }
+
+  const invalidPath = writeTempTargetsFile({ targets: [prodTarget({ environment: "prod-eu" })] });
+  await assert.rejects(() => loadTargetRegistry(invalidPath, { env: {} }), /Invalid targets configuration/);
 });

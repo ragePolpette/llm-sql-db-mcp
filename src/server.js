@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import { pathToFileURL } from "node:url";
 import express from "express";
@@ -6,6 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { flushAllCatalogs } from "./lib/anonymization/catalog.js";
 import { anonymizeQueryResult } from "./lib/anonymizer.js";
 import { isOriginAllowed, loadRuntimeConfig } from "./lib/config.js";
 import { closeSqlServerPools, executeSqlServerRead, executeSqlServerWrite } from "./lib/drivers/sqlserver.js";
@@ -49,6 +50,60 @@ function resolveRequestId(req) {
   }
 
   return randomUUID();
+}
+
+function extractPresentedToken(req) {
+  const authorization = req.headers.authorization;
+  if (typeof authorization === "string") {
+    const match = /^Bearer\s+(.+)$/i.exec(authorization.trim());
+    if (match) {
+      return match[1].trim();
+    }
+  }
+
+  const apiKey = req.headers["x-api-key"];
+  return typeof apiKey === "string" && apiKey.trim() ? apiKey.trim() : null;
+}
+
+function digestToken(token) {
+  return createHash("sha256").update(token, "utf8").digest();
+}
+
+function createAuthMiddleware(apiKey, { exemptPaths = [] } = {}) {
+  // Comparing fixed-length digests keeps timingSafeEqual usable for tokens of any length.
+  const expectedDigest = digestToken(apiKey);
+  return (req, res, next) => {
+    if (req.method === "GET" && exemptPaths.includes(req.path)) {
+      next();
+      return;
+    }
+    const presented = extractPresentedToken(req);
+    if (presented !== null && timingSafeEqual(digestToken(presented), expectedDigest)) {
+      next();
+      return;
+    }
+
+    res.setHeader("www-authenticate", "Bearer");
+    createProtocolErrorResponse(res, {
+      status: 401,
+      jsonRpcCode: -32001,
+      message: "Missing or invalid API key.",
+      errorCode: "unauthorized"
+    });
+  };
+}
+
+function assertHashSaltForAnonymizedTargets(targetRegistry, providerConfig) {
+  const anonymizedTargetIds = targetRegistry
+    .list()
+    .filter(target => target.status === "active" && target.anonymization_enabled)
+    .map(target => target.target_id);
+
+  if (anonymizedTargetIds.length > 0 && !String(providerConfig.hashSalt || "").trim()) {
+    throw new Error(
+      `ANON_HASH_SALT is required because anonymization is enabled for: ${anonymizedTargetIds.join(", ")}.`
+    );
+  }
 }
 
 function buildMcpServer(config, dependencies) {
@@ -126,14 +181,19 @@ function buildReadinessPayload({ config, targetRegistry, env, startedAt }) {
   };
 }
 
-export async function createApp({ cwd = process.cwd(), closeSqlPools = closeSqlServerPools } = {}) {
+export async function createApp({
+  cwd = process.cwd(),
+  closeSqlPools = closeSqlServerPools,
+  flushCatalogs = flushAllCatalogs
+} = {}) {
   const config = loadRuntimeConfig({ cwd });
   const logger = createLogger({
     level: config.logLevel,
     format: config.logFormat
   });
-  const targetRegistry = await loadTargetRegistry(config.targetsFile, { env: process.env });
-  const app = createMcpExpressApp();
+  const targetRegistry = await loadTargetRegistry(config.targetsFile, { env: process.env, logger });
+  assertHashSaltForAnonymizedTargets(targetRegistry, config.providers);
+  const app = createMcpExpressApp({ host: config.host });
   const sessionStore = new SessionStore({
     defaultTtlMs: config.sessionTtlMs
   });
@@ -167,6 +227,9 @@ export async function createApp({ cwd = process.cwd(), closeSqlPools = closeSqlS
       }
     });
   });
+  if (config.auth.apiKey) {
+    app.use(createAuthMiddleware(config.auth.apiKey, { exemptPaths: [config.healthPath] }));
+  }
 
   app.get(config.healthPath, (_req, res) => {
     res.json({
@@ -392,6 +455,19 @@ export async function createApp({ cwd = process.cwd(), closeSqlPools = closeSqlS
         await closeSqlPools();
       } catch (error) {
         logger.error("db.pool_close_failed", {
+          error: error.message
+        });
+      }
+
+      try {
+        for (const failure of flushCatalogs()) {
+          logger.error("anon.catalog_flush_failed", {
+            catalog_path: failure.filePath,
+            error: failure.error?.message ?? String(failure.error)
+          });
+        }
+      } catch (error) {
+        logger.error("anon.catalog_flush_failed", {
           error: error.message
         });
       }

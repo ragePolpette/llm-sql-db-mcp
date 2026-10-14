@@ -1,10 +1,16 @@
 import fs from "node:fs/promises";
-import { z } from "zod";
+import * as z from "zod";
 
 const allowedProviders = ["none", "lmstudio", "ollama"];
 const allowedStatuses = ["active", "disabled"];
 const allowedAnonymizationTrust = ["corroborated", "strict"];
 const allowedAnonymizationModes = ["off", "direct", "deterministic", "hybrid", "llm-strict"];
+export const TARGET_ENVIRONMENTS = ["dev", "test", "qa", "uat", "staging", "prod"];
+export const PRODUCTION_ENVIRONMENT = "prod";
+const ENVIRONMENT_ALIASES = new Map([
+  ["development", "dev"],
+  ["production", "prod"]
+]);
 const targetStateSchema = z.object({
   runtime_status: z.string().min(1).optional(),
   last_synced_at: z.string().nullable().optional(),
@@ -15,7 +21,7 @@ const targetSchema = z
   .object({
     target_id: z.string().min(1),
     display_name: z.string().min(1),
-    environment: z.string().min(1),
+    environment: z.enum(TARGET_ENVIRONMENTS),
     db_kind: z.literal("sqlserver"),
     status: z.enum(allowedStatuses),
     connection_env_var: z.string().min(1).regex(/^[A-Z0-9_]+$/),
@@ -35,7 +41,7 @@ const targetSchema = z
     if (!target.anonymization_enabled) {
       if (target.anonymization_mode !== "off") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           message: "anonymization_mode must be \"off\" when anonymization is disabled.",
           path: ["anonymization_mode"]
         });
@@ -43,7 +49,7 @@ const targetSchema = z
 
       if (target.llm_provider !== "none") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           message: "llm_provider must be \"none\" when anonymization is disabled.",
           path: ["llm_provider"]
         });
@@ -51,7 +57,7 @@ const targetSchema = z
 
       if (target.llm_model !== "") {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: "custom",
           message: "llm_model must be empty when anonymization is disabled.",
           path: ["llm_model"]
         });
@@ -60,7 +66,7 @@ const targetSchema = z
 
     if (target.anonymization_enabled && target.llm_provider === "none") {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         message: "llm_provider cannot be \"none\" when anonymization is enabled.",
         path: ["llm_provider"]
       });
@@ -98,12 +104,26 @@ function parseBooleanOverride(value, label) {
   throw new Error(`${label} must be a boolean value.`);
 }
 
+function normalizeEnvironment(environment) {
+  if (typeof environment !== "string") {
+    return environment;
+  }
+
+  const normalized = environment.trim().toLowerCase();
+  return ENVIRONMENT_ALIASES.get(normalized) ?? normalized;
+}
+
+export function isProductionTarget(target) {
+  return normalizeEnvironment(target?.environment) === PRODUCTION_ENVIRONMENT;
+}
+
 function normalizeRuntimeTarget(target) {
   if (!target || typeof target !== "object" || Array.isArray(target)) {
     return target;
   }
 
   const nextTarget = { ...target };
+  nextTarget.environment = normalizeEnvironment(nextTarget.environment);
 
   if (nextTarget.llm_provider === undefined && nextTarget.anonymization_provider !== undefined) {
     nextTarget.llm_provider = nextTarget.anonymization_provider;
@@ -116,9 +136,10 @@ function normalizeRuntimeTarget(target) {
   return nextTarget;
 }
 
-function applyTargetEnvOverrides(target, env) {
+function applyTargetEnvOverrides(target, env, warn) {
   const prefix = normalizeTargetEnvPrefix(target.target_id);
   const nextTarget = { ...target };
+  const production = isProductionTarget(target);
 
   const readEnabled = env[`${prefix}_READ_ENABLED`];
   if (readEnabled !== undefined && readEnabled !== "") {
@@ -127,15 +148,30 @@ function applyTargetEnvOverrides(target, env) {
 
   const writeEnabled = env[`${prefix}_WRITE_ENABLED`];
   if (writeEnabled !== undefined && writeEnabled !== "") {
-    nextTarget.write_enabled = parseBooleanOverride(writeEnabled, `${prefix}_WRITE_ENABLED`);
+    const parsed = parseBooleanOverride(writeEnabled, `${prefix}_WRITE_ENABLED`);
+    if (production && parsed) {
+      warn("target.prod_override_ignored", {
+        target_id: target.target_id,
+        env_var: `${prefix}_WRITE_ENABLED`,
+        reason: "Write access is always disabled for prod targets."
+      });
+    } else {
+      nextTarget.write_enabled = parsed;
+    }
   }
 
   const anonymizationEnabled = env[`${prefix}_ANONYMIZATION_ENABLED`];
   if (anonymizationEnabled !== undefined && anonymizationEnabled !== "") {
-    nextTarget.anonymization_enabled = parseBooleanOverride(
-      anonymizationEnabled,
-      `${prefix}_ANONYMIZATION_ENABLED`
-    );
+    const parsed = parseBooleanOverride(anonymizationEnabled, `${prefix}_ANONYMIZATION_ENABLED`);
+    if (production && !parsed && nextTarget.anonymization_enabled) {
+      warn("target.prod_override_ignored", {
+        target_id: target.target_id,
+        env_var: `${prefix}_ANONYMIZATION_ENABLED`,
+        reason: "Anonymization on a prod target can only be disabled in the targets file."
+      });
+    } else {
+      nextTarget.anonymization_enabled = parsed;
+    }
     if (!nextTarget.anonymization_enabled) {
       nextTarget.anonymization_mode = "off";
       nextTarget.llm_provider = "none";
@@ -172,13 +208,50 @@ function applyTargetEnvOverrides(target, env) {
   return nextTarget;
 }
 
+// Production targets are read-only regardless of what the targets file or the environment say.
+export function applyProductionFence(target, warn = () => {}) {
+  if (!isProductionTarget(target)) {
+    return target;
+  }
+
+  const nextTarget = { ...target };
+  if (nextTarget.write_enabled) {
+    warn("target.prod_write_disabled", {
+      target_id: target.target_id,
+      reason: "write_enabled forced to false for a prod target."
+    });
+    nextTarget.write_enabled = false;
+  }
+
+  if (Array.isArray(nextTarget.allowed_tools) && nextTarget.allowed_tools.includes("db_write")) {
+    warn("target.prod_write_tool_removed", {
+      target_id: target.target_id,
+      reason: "db_write removed from allowed_tools for a prod target."
+    });
+    nextTarget.allowed_tools = nextTarget.allowed_tools.filter(tool => tool !== "db_write");
+  }
+
+  return nextTarget;
+}
+
+function warnAboutUnmaskedProductionTargets(targets, warn) {
+  for (const target of targets) {
+    if (isProductionTarget(target) && target.status === "active" && !target.anonymization_enabled) {
+      warn("target.prod_anonymization_disabled", {
+        target_id: target.target_id,
+        reason: "Anonymization is disabled for an active prod target: query results are returned unmasked."
+      });
+    }
+  }
+}
+
 export class TargetRegistry {
   #targets;
   #targetMap;
 
   constructor(targets) {
     ensureUniqueTargetIds(targets);
-    this.#targets = structuredClone(targets);
+    this.#targets = structuredClone(targets).map(target => applyProductionFence(target));
     this.#targetMap = new Map(this.#targets.map(target => [target.target_id, target]));
   }
 
@@ -205,19 +278,20 @@ export class TargetRegistry {
   }
 }
 
-export async function loadTargetRegistry(targetsFilePath, { env = process.env } = {}) {
+export async function loadTargetRegistry(targetsFilePath, { env = process.env, logger = null } = {}) {
+  const warn = (event, payload) => logger?.warn?.(event, payload);
   let rawFile;
   try {
     rawFile = await fs.readFile(targetsFilePath, "utf8");
   } catch (error) {
-    throw new Error(`Unable to read targets file at ${targetsFilePath}: ${error.message}`);
+    throw new Error(`Unable to read targets file at ${targetsFilePath}: ${error.message}`, { cause: error });
   }
 
   let parsedJson;
   try {
     parsedJson = JSON.parse(rawFile);
   } catch (error) {
-    throw new Error(`targets.json is not valid JSON: ${error.message}`);
+    throw new Error(`targets.json is not valid JSON: ${error.message}`, { cause: error });
   }
 
   // Legacy environment override names collapse punctuation/case. Reject an
@@ -231,7 +305,7 @@ export async function loadTargetRegistry(targetsFilePath, { env = process.env } 
     prefixes.add(prefix);
   }
   const rawTargets = Array.isArray(parsedJson?.targets)
-    ? parsedJson.targets.map(target => applyTargetEnvOverrides(normalizeRuntimeTarget(target), env))
+    ? parsedJson.targets.map(target => applyTargetEnvOverrides(normalizeRuntimeTarget(target), env, warn))
     : parsedJson?.targets;
 
   const parsed = targetsFileSchema.safeParse({
@@ -242,5 +316,7 @@ export async function loadTargetRegistry(targetsFilePath, { env = process.env } 
     throw new Error(`Invalid targets configuration: ${parsed.error.message}`);
   }
 
-  return new TargetRegistry(parsed.data.targets);
+  const targets = parsed.data.targets.map(target => applyProductionFence(target, warn));
+  warnAboutUnmaskedProductionTargets(targets, warn);
+  return new TargetRegistry(targets);
 }

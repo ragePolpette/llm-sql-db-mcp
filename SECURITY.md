@@ -48,7 +48,7 @@ Risks not fully covered:
 
 ## Anonymization: what it protects and what it does not
 
-Anonymization acts on the output of `db_read`: it masks values the server recognizes as personal data before returning them to the client.
+Anonymization acts on the output of `db_read` and on rows returned by `db_write` through an `OUTPUT` clause: it masks values the server recognizes as personal data before returning them to the client.
 
 It protects against:
 
@@ -68,6 +68,14 @@ If the client may be hostile, or deliberate exfiltration is a risk to cover:
 - use a dedicated SQL login for the target with permissions only on views that do not contain the sensitive columns (or expose them already pseudonymized), with no `SELECT` on the base tables
 - alternatively use database features designed for this, such as column-level permissions with `DENY SELECT` on sensitive columns, or Row-Level Security; SQL Server Dynamic Data Masking alone is not enough, because it can be bypassed with predicates and functions in the same way
 - treat server-side anonymization as a second line of defense, not as the security boundary
+
+### Data sent to the LLM provider
+
+For targets with an LLM provider (`llm_provider` set to `lmstudio` or `ollama`), column classification is delegated to that provider. The classification request contains the column names, the query sources, and up to five raw distinct sample values per column, taken from the actual result set before masking. These values leave the server process in clear. The provider is expected to run locally or on a host trusted with the same data; do not point `LMSTUDIO_BASE_URL` or `OLLAMA_BASE_URL` at a shared or remote service unless that is acceptable for the data in the target. With `ANON_FIELD_IDENTIFICATION=heuristic`, and an `anonymization_mode` other than `llm-strict`, no values are sent.
+
+### Fiscal codes and VAT numbers
+
+Columns named like an Italian fiscal code (`cf`, `codice_fiscale`, `codfiscale`, ...) or VAT number (`partita_iva`, `piva`, `vat`, ...) are treated as safe identifiers and returned in clear, and the provider prompt tells the model to classify them as not sensitive. This is a deliberate choice for the databases this server was built for: there these values are the business keys that operators use to correlate records across queries and with external systems, and masking them would make diagnostics impossible. VAT numbers identify businesses and are public. A natural person's fiscal code, however, is personal data and encodes name, birth date, sex, and place of birth. If that is not acceptable for a target, mark the columns as sensitive with the catalog CLI (`npm run anon:catalog -- set dbo.Clienti.CodiceFiscale sensitive --kind text`), which overrides the safe rule, or exclude them at the database level.
 
 More detail: [docs/ANONYMIZATION.md](./docs/ANONYMIZATION.md).
 
@@ -118,17 +126,15 @@ REVERT;
 
 With such a login, server-side anonymization stays active as a second line: it covers view misconfigurations and accidental exposure. In addition, on anonymized targets SQL Server error messages are scrubbed of the values they may contain (for example `Conversion failed when converting the nvarchar value '...'`); compile-time errors, which happen before any row is read, are kept intact so the query can be corrected.
 
-## Future authentication boundary
+## Authentication boundary
 
-The current runtime does not implement strong authentication because the intended deployment is local or limited to a team.
+The runtime does not implement identity-aware authentication because the intended deployment is local or limited to a team. It offers an optional static shared token at the HTTP edge:
 
-If the project moves up a level, authentication would be added at the HTTP edge:
+- with `DB_MCP_API_KEY` set, every request must carry `Authorization: Bearer <token>` or `x-api-key: <token>`, checked in constant time before MCP session resolution and tool execution
+- binding `HOST` to a non-loopback address without `DB_MCP_API_KEY` is refused at startup
+- `DB_MCP_API_KEY` must come from the runtime environment; it is rejected in the repository `.env`
 
-- before MCP session resolution
-- before tool execution
-- without rewriting the query engine, the registry, or the MCP surface
-
-The reference design is in [docs/AUTH_FUTURE_INTEGRATION.md](./docs/AUTH_FUTURE_INTEGRATION.md).
+Further modes (JWT, authenticating proxy) are described in [docs/AUTH_FUTURE_INTEGRATION.md](./docs/AUTH_FUTURE_INTEGRATION.md).
 
 ## Protected assets
 
@@ -149,7 +155,15 @@ The reference design is in [docs/AUTH_FUTURE_INTEGRATION.md](./docs/AUTH_FUTURE_
 
 ## Production targets
 
-For all `environment=prod` targets:
+For all `environment=prod` targets the runtime enforces:
+
+- `write_enabled` is forced to `false` and `db_write` is removed from `allowed_tools` when the registry is loaded, with a warning
+- the policy engine denies `db_write` on any prod target, independently of the target fields
+- `TARGET_<ID>_WRITE_ENABLED=true` and `TARGET_<ID>_ANONYMIZATION_ENABLED=false` are ignored with a warning
+- `anonymization_enabled=false` set in the registry is honored as an explicit operator choice, and logged as a warning at every startup
+- `environment` is validated against `dev`, `test`, `qa`, `uat`, `staging`, `prod` (aliases `development`, `production`), so a misspelled production label fails at startup instead of escaping the fence
+
+Operational rules:
 
 - no shortcuts that implicitly re-enable writes
 - no policy bypass through legacy naming or weak fallbacks

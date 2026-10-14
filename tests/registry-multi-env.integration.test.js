@@ -103,12 +103,14 @@ test("integration: multiple active prod targets are surfaced by the registry and
   const port = await getFreePort();
   const originalEnv = {
     PORT: process.env.PORT,
+    ANON_HASH_SALT: process.env.ANON_HASH_SALT,
     DB_DEV_MAIN_CONNECTION_STRING: process.env.DB_DEV_MAIN_CONNECTION_STRING,
     DB_PROD_MAIN_CONNECTION_STRING: process.env.DB_PROD_MAIN_CONNECTION_STRING,
     DB_PROD_REPORTING_CONNECTION_STRING: process.env.DB_PROD_REPORTING_CONNECTION_STRING
   };
 
   process.env.PORT = String(port);
+  process.env.ANON_HASH_SALT = "integration-test-salt";
   process.env.DB_DEV_MAIN_CONNECTION_STRING = "Server=dev;Database=Test;";
   process.env.DB_PROD_MAIN_CONNECTION_STRING = "Server=prod;Database=Main;";
   delete process.env.DB_PROD_REPORTING_CONNECTION_STRING;
@@ -175,6 +177,12 @@ test("integration: multiple active prod targets are surfaced by the registry and
       delete process.env.PORT;
     } else {
       process.env.PORT = originalEnv.PORT;
+    }
+
+    if (originalEnv.ANON_HASH_SALT === undefined) {
+      delete process.env.ANON_HASH_SALT;
+    } else {
+      process.env.ANON_HASH_SALT = originalEnv.ANON_HASH_SALT;
     }
 
     if (originalEnv.DB_DEV_MAIN_CONNECTION_STRING === undefined) {

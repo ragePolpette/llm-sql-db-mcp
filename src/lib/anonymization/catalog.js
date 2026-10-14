@@ -22,7 +22,7 @@ function isPlainObject(value) {
 export function normalizeCatalogKey(key) {
   return String(key || "")
     .trim()
-    .replace(/[\[\]"`]/g, "")
+    .replace(/[[\]"`]/g, "")
     .toLowerCase();
 }
 
@@ -230,6 +230,18 @@ export function getCatalog(filePath) {
     catalogCache.set(filePath, catalog);
   }
   return catalog;
+}
+
+// Forces every open catalog to disk, e.g. at shutdown, and reports the ones that failed.
+export function flushAllCatalogs() {
+  const failures = [];
+  for (const catalog of catalogCache.values()) {
+    catalog.flush({ force: true });
+    if (catalog.lastError) {
+      failures.push({ filePath: catalog.filePath, error: catalog.lastError });
+    }
+  }
+  return failures;
 }
 
 export const __catalogTestUtils = {
