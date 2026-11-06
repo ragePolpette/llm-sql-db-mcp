@@ -29,6 +29,18 @@ npm run anon:catalog -- set dbo.Ordini.Stato safe
 
 Every value that is not otherwise masked goes through a deterministic floor: e-mail addresses, checksum-valid IBANs and checksum-valid personal fiscal codes (16 characters, omocodia included) are always replaced, even in columns judged technical. VAT numbers and 11-digit company fiscal codes are not touched.
 
+## Schema classification (on demand)
+
+`npm run anon:catalog -- classify --target <id>` proposes verdicts for columns that have none. It never runs on the query path and never reads values: only metadata (schema, table, column, SQL type, sibling column names) reaches the model.
+
+1. Rules first: dates (birth dates excepted), file names, system objects and recognized column names are decided without a model.
+2. The remaining text columns are sent per table to a local model (`ANON_CLASSIFIER_PROVIDER` = `ollama` or `lmstudio`, `ANON_CLASSIFIER_MODEL`), with independent questions: person names, contact info, personal free text, credential, technical code, and a kind from a closed list.
+3. The answer is validated (only requested columns, known kinds, probabilities in 0-1); invalid or missing answers become `review`.
+4. The policy in code is asymmetric: any personal signal at 0.5 or more gives `proposed-sensitive`; `proposed-safe` needs kind `technical`, technical signal at 0.9 or more and every personal signal at 0.1 or less; everything else is `review`.
+5. Proposals go to `<catalog>.proposals.json` (model, prompt version, input hash). They change nothing until accepted: `proposals`, `accept <key>` (or `accept --status proposed-safe`), `accept <key> --as safe|sensitive --kind <kind>` for review items, `reject <key>`. A rejected proposal is not proposed again until its input changes.
+
+`classify --eval <n>` runs the same pipeline on n columns that already have a human verdict and reports `safe_precision` (the share of `proposed-safe` that a human also marked safe), `sensitive_recall`, `review_rate` and the columns that would have leaked. Run it before trusting a new model or prompt.
+
 ## Threat model
 
 Output anonymization protects against accidental exposure of personal data to a client acting in good faith, for example an LLM reading production data. It does not protect against a hostile caller crafting queries to infer values. Numbers derived from sensitive columns (`ASCII(SUBSTRING(cognome, 1, 1))`, `YEAR(data_nascita)`) are returned in clear, and predicates on sensitive columns (`COUNT(*) ... WHERE cognome LIKE 'R%'`) answer yes/no questions. Filtering output cannot close these channels.

@@ -141,7 +141,7 @@ function isObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-function normalizeKey(key) {
+export function normalizeKey(key) {
   return String(key || "")
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
     .toLowerCase()
@@ -249,7 +249,7 @@ function isShortEnumProfile(normalizedKey, profile) {
 
 // File names and paths (nomefile, NomeFile, filename, nome_file_originale, ...) are technical, not
 // person names. Personal data embedded in them is still caught by the value floor.
-function isFileNameKey(normalizedKey) {
+export function isFileNameKey(normalizedKey) {
   const tokens = tokenSetFromKey(normalizedKey);
   const compact = compactKey(normalizedKey);
   return hasAnyToken(tokens, ["file", "filename", "files"]) || compact.includes("nomefile") || compact.includes("filename");
@@ -372,7 +372,7 @@ function isExplicitlySafeKey(key) {
   return true;
 }
 
-function inferKindHeuristic(key) {
+export function inferKindHeuristic(key) {
   const normalized = normalizeKey(key);
   if (!normalized) return null;
 
