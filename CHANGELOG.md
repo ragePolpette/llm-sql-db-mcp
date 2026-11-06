@@ -17,6 +17,8 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 - Documented that raw sample values are sent to the local LLM provider during classification and that fiscal codes and VAT numbers are treated as safe identifiers by design (SECURITY.md).
 
 ### Changed
+- Provider classification requests carry, for each column, its source table (`schema.table`, from SQL Server column origins; `null` for computed columns) and a `computed` flag. The prompt tells the model to read the column name together with its table and to use `date` only for birth dates.
+- Provider failures are no longer silent: the `anonymizer_decisions` log event carries `provider` (`ok` with `duration_ms` and `classified`, `failed:timeout`, `failed:invalid-json`, `failed:error`, or `skipped:*`), never the error text. A local model slower than `ANON_TIMEOUT_MS` (5 s by default) used to turn every unknown column into `TEXT_` without a trace.
 - File-name columns (`nomefile`, `filename`, `nome_file_originale`, ...) are no longer classified as person names, and source columns holding only ISO dates or datetimes are no longer masked as text (`safe:file-name`, `safe:datetime`). Both rules take precedence over provider verdicts and automatic `auto-sensitive` catalog entries, never over a human verdict, a birth-date name heuristic, or computed columns.
 - `db_read` streams the first result set and stops at `max_rows + 1` rows or at `max_result_bytes`, instead of loading the whole result in memory. `total_rows_before_limits` now counts rows read (at most `max_rows + 1`), not the full result size.
 - `db_read` runs in an explicit `READ COMMITTED` transaction that is always rolled back.

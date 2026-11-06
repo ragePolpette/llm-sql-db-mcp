@@ -346,6 +346,7 @@ export function createHandlers({
                     tool: "db_read",
                     target_id: target.target_id,
                     by_reason: report.by_reason,
+                    provider: report.provider,
                     columns: report.columns,
                     origins: report.origins
                   })
@@ -494,6 +495,7 @@ export function createHandlers({
                   tool: "db_write",
                   target_id: target.target_id,
                   by_reason: report.by_reason,
+                  provider: report.provider,
                   columns: report.columns,
                   origins: report.origins
                 })

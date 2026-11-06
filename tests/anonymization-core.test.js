@@ -583,3 +583,57 @@ test("a column mixing dates and other text is not treated as a date column", asy
   );
   assert.notEqual(second.riferimento_cliente, "Mario Rossi");
 });
+
+test("the provider receives each column with its source table, never for computed columns", async () => {
+  __anonymizationCoreTestUtils.resetKindCache();
+  let sent;
+  const fetchImpl = async (_url, init) => {
+    sent = JSON.parse(init.body);
+    return { ok: true, async json() { return { message: { content: JSON.stringify({ fields: {} }) } }; } };
+  };
+  await anonymizeRows([{ Descrizione: "x", y: "z" }], llmCfg(), {
+    sqlText: "SELECT f.Descrizione, UPPER(f.Altro) AS y FROM dbo.Fat_PA f",
+    columnOrigins: { Descrizione: { schema: "dbo", table: "Fat_PA", column: "Descrizione" }, y: null },
+    fetchImpl
+  });
+  const messages = sent.messages ?? [];
+  const system = messages.find(m => m.role === "system")?.content ?? "";
+  const user = JSON.parse(messages.find(m => m.role === "user")?.content ?? "{}");
+  const byKey = Object.fromEntries(user.fields.map(f => [f.key, f]));
+  assert.equal(byKey.Descrizione.table, "dbo.Fat_PA");
+  assert.equal(byKey.Descrizione.computed, false);
+  assert.equal(byKey.y.table, null);
+  assert.equal(byKey.y.computed, true);
+  assert.match(system, /Use date only for birth dates/);
+});
+
+test("the report says when and why provider classification failed", async () => {
+  __anonymizationCoreTestUtils.resetKindCache();
+  let report;
+  const slow = async () => {
+    throw new DOMException("Ollama provider request timed out after 5000ms.", "AbortError");
+  };
+  const [row] = await anonymizeRows([{ Descrizione: "Mario Rossi" }], llmCfg(), {
+    sqlText: "SELECT Descrizione FROM dbo.t",
+    columnOrigins: resolvedOrigins("Descrizione"),
+    fetchImpl: slow,
+    onReport: r => { report = r; }
+  });
+  assert.match(row.Descrizione, /^TEXT_/, "fail-closed default still applies");
+  assert.equal(report.provider.status, "failed:timeout");
+  assert.equal(JSON.stringify(report).includes("Mario"), false);
+
+  __anonymizationCoreTestUtils.resetKindCache();
+  await anonymizeRows([{ Descrizione: "consegna" }], llmCfg(), {
+    sqlText: "SELECT Descrizione FROM dbo.t2",
+    columnOrigins: resolvedOrigins("Descrizione"),
+    fetchImpl: llmFetch({ Descrizione: { kind: "none", confidence: 0.95 } }),
+    onReport: r => { report = r; }
+  });
+  assert.equal(report.provider.status, "ok");
+  assert.equal(report.provider.classified, 1);
+
+  await anonymizeRows([{ x: "a" }], BASE_CFG, { onReport: r => { report = r; } });
+  assert.equal(report.provider.status, "skipped:heuristic");
+});
+
