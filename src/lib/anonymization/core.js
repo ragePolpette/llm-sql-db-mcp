@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { anonymizeWithLmStudio } from "../providers/lmstudio.js";
 import { anonymizeWithOllama } from "../providers/ollama.js";
+import { isSystemMetadataQuery, isSystemOrigin } from "./system-objects.js";
 
 const EMAIL_REGEX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const PHONE_TEXT_REGEX = /(?=.*[+\s().-])(\+?\d[\d\s().-]{6,}\d)/g;
@@ -14,6 +15,9 @@ const PERSONAL_FISCAL_CODE_REGEX =
 const FISCAL_CODE_ODD_VALUES = [1, 0, 5, 7, 9, 13, 15, 17, 19, 21, 2, 4, 18, 20, 11, 3, 6, 8, 12, 14, 16, 10, 22, 25, 24, 23];
 // ISO date/datetime strings, as the SQL Server driver serializes date and time columns.
 const ISO_DATETIME_REGEX = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+// SQL types whose values are never personal text, whatever their JSON serialization (bigint arrives
+// as a string). The check uses the column type reported by the driver, never the JS value type.
+const NUMERIC_SQL_TYPES = new Set(["int", "bigint", "smallint", "tinyint", "decimal", "numeric", "money", "smallmoney", "float", "real", "bit"]);
 const KIND_VALUES = new Set(["email", "phone", "name", "org", "address", "city", "text", "date", "iban"]);
 // Kinds that a provider "none" verdict can never downgrade: a heuristic hit on these is a floor.
 const STRONG_KINDS = new Set(["email", "phone", "name", "iban", "date"]);
@@ -678,7 +682,7 @@ function buildColumnResolver(columnOrigins, sqlText) {
     const entry = Object.prototype.hasOwnProperty.call(columnOrigins, key) ? columnOrigins[key] : undefined;
     if (!entry || !entry.column) return { classKey: key, derived: true, catalogKey: null };
     const catalogKey = [entry.schema, entry.table, entry.column].filter(Boolean).join(".");
-    return { classKey: entry.column, derived: false, catalogKey };
+    return { classKey: entry.column, derived: false, catalogKey, systemOrigin: isSystemOrigin(entry) };
   };
 }
 
@@ -715,7 +719,7 @@ function isOverridableByAutoSafe(resolved) {
 }
 
 function observationStatusFor(reason) {
-  if (reason.startsWith("catalog:human") || reason === "kept:non-string") return null;
+  if (reason.startsWith("catalog:human") || reason === "kept:non-string" || reason.startsWith("safe:system-")) return null;
   if (reason.startsWith("catalog:auto-sensitive")) return "sensitive";
   if (reason.startsWith("catalog:auto-safe")) return "revalidate";
   if (reason.startsWith("heuristic:") || reason.startsWith("provider:")) return "sensitive";
@@ -749,7 +753,8 @@ function buildCatalogObservation(entry, profile, cfg) {
   };
 }
 
-function deterministicFallback(rows, cfg, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE, columnProfiles = null, resolveColumn = key => ({ classKey: key, derived: false, catalogKey: null }), report = null, catalogCtx = null) {
+function deterministicFallback(rows, cfg, fieldKindMap, cacheScope = GLOBAL_CACHE_SCOPE, columnProfiles = null, resolveColumn = key => ({ classKey: key, derived: false, catalogKey: null }), report = null, catalogCtx = null, structural = {}) {
+  const { columnTypes = null, systemQuery = false } = structural;
   const trust = cfg?.trust === "strict" ? "strict" : "corroborated";
   return rows.map(row => {
     if (!isObject(row)) return row;
@@ -759,10 +764,22 @@ function deterministicFallback(rows, cfg, fieldKindMap, cacheScope = GLOBAL_CACH
       const value = out[key];
       if (value === null || value === undefined) continue;
 
-      const { classKey, derived, catalogKey } = resolveColumn(key);
+      // Numeric SQL columns carry no personal text: decided on the SQL type, not on the JSON value.
+      if (NUMERIC_SQL_TYPES.has(String(columnTypes?.[key] ?? "").toLowerCase())) {
+        report?.record(key, key, false, "kept:numeric-type", false);
+        continue;
+      }
+
+      const { classKey, derived, catalogKey, systemOrigin } = resolveColumn(key);
       const catalogEntry = catalogCtx && catalogKey ? catalogCtx.lookup(catalogKey) : null;
       const profile = columnProfiles?.get(normalizeKey(key)) || null;
-      let decision = decideFromCatalog(catalogEntry, derived);
+      // System metadata (sys, INFORMATION_SCHEMA, msdb, minus data-carrying objects) is never personal
+      // data; the value floor below still masks e-mails, IBANs and fiscal codes in it.
+      let decision = systemOrigin
+        ? { kind: NONE_KIND, reason: "safe:system-object" }
+        : systemQuery
+          ? { kind: NONE_KIND, reason: "safe:system-query" }
+          : decideFromCatalog(catalogEntry, derived);
       if (!decision || decision.reason === "catalog:auto-sensitive") {
         decision = decideStructuralSafe(classKey, profile, derived) ?? decision;
       }
@@ -1060,7 +1077,10 @@ export async function anonymizeRows(rows, cfg, options = {}) {
 
   const report = createDecisionReport();
   const catalogCtx = createCatalogContext(options?.catalog, options?.targetId);
-  const masked = deterministicFallback(rows, cfg, fieldKindMap, cacheScope, columnProfiles, resolveColumn, report, catalogCtx);
+  const masked = deterministicFallback(rows, cfg, fieldKindMap, cacheScope, columnProfiles, resolveColumn, report, catalogCtx, {
+    columnTypes: isObject(options?.columnTypes) ? options.columnTypes : null,
+    systemQuery: isSystemMetadataQuery(options?.sqlText)
+  });
   catalogCtx?.commit(columnProfiles, cfg);
   if (typeof options?.onReport === "function") {
     try {

@@ -18,6 +18,13 @@ npm run anon:catalog -- set dbo.Ordini.Stato safe
 - Keep the catalog file outside the repository: it contains schema names.
 - File-name columns and plain date/time columns (see [SECURITY.md](../SECURITY.md#file-names-and-dates)) stay in clear even when the catalog holds an older `auto-sensitive` verdict for them; only a human verdict masks them.
 
+## System metadata and numeric columns
+
+- `kept:numeric-type`: the SQL type of the column is numeric (`int`, `bigint`, `decimal`, `numeric`, `money`, `float`, `real`, `bit`, ...), whatever the JSON value looks like.
+- `safe:system-object`: the column origin is in `sys`, `INFORMATION_SCHEMA` or `msdb`.
+- `safe:system-query`: every object the query reads is system metadata, so computed columns of system views (most of `INFORMATION_SCHEMA`) stay readable too.
+- Never metadata: `dm_exec_sql_text`, `dm_exec_input_buffer`, query plans, Query Store text and plans, `msdb` Database Mail, `sysjobhistory`, `sysjobsteps`, `sysjobstepslogs`, audit and Extended Events files.
+
 ## Value floor
 
 Every value that is not otherwise masked goes through a deterministic floor: e-mail addresses, checksum-valid IBANs and checksum-valid personal fiscal codes (16 characters, omocodia included) are always replaced, even in columns judged technical. VAT numbers and 11-digit company fiscal codes are not touched.

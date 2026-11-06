@@ -82,6 +82,10 @@ Columns named like an Italian fiscal code (`cf`, `codice_fiscale`, `codfiscale`,
 
 To mask a whole column regardless of its values, mark it as sensitive with the catalog CLI (`npm run anon:catalog -- set dbo.Clienti.PartitaIva sensitive --kind text`).
 
+### System metadata and numeric columns
+
+Numeric SQL columns are returned in clear based on the column type reported by SQL Server, never on the JSON value. System metadata (`sys`, `INFORMATION_SCHEMA`, `msdb`) is returned in clear when a column comes from a system object, or when every object a query reads is a system object; the check is conservative and any user object, bare name, CTE, temp table, variable or non-system function call in the query disables it. System objects that hold user data in clear (query text and plans, Query Store, Database Mail, job history and steps, audit and Extended Events files) are never treated as metadata. The value floor (e-mail, IBAN, personal fiscal code) still applies to system metadata.
+
 ### File names and dates
 
 Source columns whose name refers to a file (`nomefile`, `NomeFile`, `filename`, `nome_file_originale`, ...) and source columns whose values are all ISO dates or datetimes (creation, sending, due dates) are returned in clear, whatever the provider or an automatic catalog verdict says. The value floor still applies to file names. These rules never apply to computed columns or aliases, and never override a name heuristic such as `data_nascita` or `birth_date`, which stays masked as a date. A human `sensitive` verdict in the catalog overrides them.
