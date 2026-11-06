@@ -1012,6 +1012,12 @@ async function resolveFieldKinds(rows, cfg, cacheScope = GLOBAL_CACHE_SCOPE, fet
   const provider = String(cfg?.provider || "").toLowerCase();
   const requireLlmClassification = mode === "llm-strict";
 
+  // Deterministic mode never calls a provider, whatever the field identification strategy says.
+  if (mode === "deterministic") {
+    providerState.status = "skipped:deterministic";
+    return new Map();
+  }
+
   if (!requireLlmClassification && strategy === "heuristic") {
     providerState.status = "skipped:heuristic";
     return new Map();

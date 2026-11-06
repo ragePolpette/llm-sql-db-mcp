@@ -135,6 +135,8 @@ Runtime settings are read from environment variables. [.env.example](.env.exampl
 
 Per-target overrides can be supplied through `TARGET_<TARGET_ID>_...` environment variables for read, write, and anonymization behavior. On `prod` targets, overrides that would enable writes (`TARGET_<ID>_WRITE_ENABLED=true`) or disable anonymization (`TARGET_<ID>_ANONYMIZATION_ENABLED=false`) are ignored and a `target.prod_override_ignored` warning is logged.
 
+With `anonymization_mode: "deterministic"` the provider is never called (rules, column catalog and value floor only), so `llm_provider` may be `"none"` and `llm_model` empty; `hybrid`, `direct` and `llm-strict` still require a provider. Responses report in `anonymization_provider` the provider actually consulted: `none` for `deterministic`, and for any mode but `llm-strict` when `ANON_FIELD_IDENTIFICATION=heuristic`.
+
 Targets with anonymization enabled also accept `anonymization_trust` (`corroborated` by default, or `strict`). `strict` ignores any provider "not sensitive" verdict on columns that are not recognized deterministically, so those string columns are masked. Anonymization decisions are logged per reason (`db.anonymizer_decisions`) without values.
 
 Connection strings, API keys, passwords, and other secrets must not live in the repository `.env`.

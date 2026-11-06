@@ -51,6 +51,16 @@ function resolveFailOpen(target, providerConfig) {
   return NON_PROD_ENVIRONMENTS.has(environment);
 }
 
+// The provider actually consulted for this target: "none" when the mode or the field identification
+// strategy never calls it, so responses do not suggest an LLM was involved.
+function effectiveProvider(target, providerConfig) {
+  const mode = normalizeMode(target.anonymization_mode);
+  const strategy = String(providerConfig?.fieldIdentification || "hybrid").toLowerCase();
+  if (mode === "deterministic") return "none";
+  if (strategy === "heuristic" && mode !== "llm-strict") return "none";
+  return target.llm_provider || "none";
+}
+
 function buildAnonymizerConfig(target, providerConfig) {
   const provider = String(target.llm_provider || "none").toLowerCase();
   const baseUrl = provider === "lmstudio"
@@ -158,7 +168,7 @@ export async function anonymizeQueryResult({
     result_bytes: computeRowsByteLength(boundedRows),
     truncated: queryResult.truncated || boundedRows.length < maskedRows.length,
     anonymization_applied: true,
-    anonymization_provider: target.llm_provider,
+    anonymization_provider: effectiveProvider(target, providerConfig),
     anonymization_mode: normalizeMode(target.anonymization_mode),
     ...(notes.length > 0 ? { anonymization_notes: notes } : {})
   };
