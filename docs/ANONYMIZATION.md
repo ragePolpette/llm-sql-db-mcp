@@ -16,6 +16,11 @@ npm run anon:catalog -- set dbo.Ordini.Stato safe
 - Machine evidence is kept per `target_id`, so dev data never vouches for prod. Human verdicts apply to all targets.
 - Verdicts can only be edited with the CLI, never through MCP tools.
 - Keep the catalog file outside the repository: it contains schema names.
+- File-name columns and plain date/time columns (see [SECURITY.md](../SECURITY.md#file-names-and-dates)) stay in clear even when the catalog holds an older `auto-sensitive` verdict for them; only a human verdict masks them.
+
+## Value floor
+
+Every value that is not otherwise masked goes through a deterministic floor: e-mail addresses, checksum-valid IBANs and checksum-valid personal fiscal codes (16 characters, omocodia included) are always replaced, even in columns judged technical. VAT numbers and 11-digit company fiscal codes are not touched.
 
 ## Threat model
 
@@ -29,4 +34,6 @@ When the server cannot verify column origins, the `db_read` result carries `anon
 
 ## Provider classification
 
-Unless `ANON_FIELD_IDENTIFICATION=heuristic` (and the mode is not `llm-strict`), the server asks the target's provider (LM Studio or Ollama) to classify unknown columns. The request contains column names, the query sources, and up to five raw distinct sample values per column. Run the provider locally or on a host you trust with that data. Verdicts are cached in memory per `target_id` and per query source set, so a verdict obtained on one target is never reused on another.
+Unless `ANON_FIELD_IDENTIFICATION=heuristic` (and the mode is not `llm-strict`), the server asks the target's provider (LM Studio or Ollama) to classify unknown columns. The request contains column names, the query sources, and up to five raw distinct sample values per column. Each column also carries its source table (`schema.table`, from SQL Server column origins) and whether it is computed, so the model can read the column name in context. Run the provider locally or on a host you trust with that data.
+
+If the provider does not answer within `ANON_TIMEOUT_MS` (5 s by default), classification is skipped and unknown text columns fall back to `TEXT_`. The `db.anonymizer_decisions` log event reports the outcome in `provider.status` (`ok`, `failed:timeout`, `failed:invalid-json`, `failed:error`, `skipped:*`) with `duration_ms`; a small model on CPU typically needs 10-20 s, so check this field before tuning prompts. Verdicts are cached in memory per `target_id` and per query source set, so a verdict obtained on one target is never reused on another.

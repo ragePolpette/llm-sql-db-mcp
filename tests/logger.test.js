@@ -154,6 +154,7 @@ test("anonymizer_decisions logs aggregate reasons at info and per-column detail 
     tool: "db_read",
     target_id: "prod-main",
     by_reason: { "heuristic:email": 2 },
+    provider: { status: "failed:timeout", duration_ms: 5001 },
     columns: [{ column: "email", reasons: { "heuristic:email": 2 } }],
     origins: { status: "unavailable", reason: "describe_failed", detail: "Invalid column name 'secret_col'." },
     rows: [{ email: "secret@x.it" }]
@@ -164,6 +165,7 @@ test("anonymizer_decisions logs aggregate reasons at info and per-column detail 
   const infoEntry = JSON.parse(infoOut.chunks[0]);
   assert.equal(infoEntry.event, "db.anonymizer_decisions");
   assert.deepEqual(infoEntry.payload.by_reason, { "heuristic:email": 2 });
+  assert.deepEqual(infoEntry.payload.provider, { status: "failed:timeout", duration_ms: 5001 });
   assert.equal(infoEntry.payload.columns, undefined);
   assert.equal(infoEntry.payload.origins_status, "unavailable");
   assert.equal(infoEntry.payload.origins_reason, "describe_failed");

@@ -206,7 +206,7 @@ Output anonymization protects against accidental exposure to a client acting in 
 
 The goal is to reduce operational mistakes and unsafe MCP usage inside a controlled environment. It is not a public-cloud data access platform.
 
-When anonymization uses an LLM provider, raw sample values from the result columns are sent to the configured local provider (LM Studio or Ollama) during classification. Italian fiscal codes and VAT numbers are treated as safe identifiers by design. Both points are explained in [SECURITY.md](SECURITY.md).
+When anonymization uses an LLM provider, raw sample values from the result columns are sent to the configured local provider (LM Studio or Ollama) during classification. VAT numbers are returned in clear by design; personal fiscal codes are pseudonymized as `CF_<digest>`; file names and plain date columns are returned in clear. Both points are explained in [SECURITY.md](SECURITY.md).
 
 See [SECURITY.md](SECURITY.md) for the threat model and reporting instructions, and [docs/AUTH_FUTURE_INTEGRATION.md](docs/AUTH_FUTURE_INTEGRATION.md) for the authentication boundary.
 
