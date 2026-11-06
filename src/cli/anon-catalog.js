@@ -7,6 +7,7 @@ import {
   normalizeCatalogKey,
   saveCatalogFile
 } from "../lib/anonymization/catalog.js";
+import { CLASSIFY_COMMANDS, CLASSIFY_USAGE, runClassifyCli } from "./anon-classify.js";
 
 const KINDS = new Set(["email", "phone", "name", "org", "address", "city", "text", "date", "iban"]);
 
@@ -24,7 +25,8 @@ Commands:
 
 Options:
   --file <path>   Catalog file (default: ANON_CATALOG_PATH)
-`;
+
+${CLASSIFY_USAGE}`;
 
 function formatRow(cells, widths) {
   return cells.map((cell, index) => String(cell ?? "").padEnd(widths[index])).join("  ").trimEnd();
@@ -140,5 +142,6 @@ export function runCli(argv, { env = process.env, stdout = process.stdout, stder
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exitCode = runCli(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  process.exitCode = CLASSIFY_COMMANDS.has(argv[0]) ? await runClassifyCli(argv) : runCli(argv);
 }
