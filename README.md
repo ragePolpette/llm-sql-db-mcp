@@ -43,6 +43,7 @@ The server exposes a small, stable MCP surface for:
 - executing controlled writes only where the target policy permits them
 - running diagnostic reads with environment resolution or explicit target pinning
 - applying deterministic or provider-assisted anonymization when required
+- classifying the schema on demand (metadata only) into column proposals that a human accepts
 
 MCP tools:
 
@@ -132,6 +133,7 @@ Runtime settings are read from environment variables. [.env.example](.env.exampl
 - `ANON_TIMEOUT_MS`
 - `ANON_MIN_CONFIDENCE` (0-1, default 0.8): a provider `none` verdict below this confidence is ignored and the column is masked
 - `ANON_CATALOG_PATH` (optional): enables the self-populating column catalog; keep it outside the repository because it contains schema names
+- `ANON_CLASSIFIER_MODEL`, `ANON_CLASSIFIER_PROVIDER` (`ollama` or `lmstudio`), `ANON_CLASSIFIER_TIMEOUT_MS`: local model used only by `anon-catalog classify`, never on the query path
 
 Per-target overrides can be supplied through `TARGET_<TARGET_ID>_...` environment variables for read, write, and anonymization behavior. On `prod` targets, overrides that would enable writes (`TARGET_<ID>_WRITE_ENABLED=true`) or disable anonymization (`TARGET_<ID>_ANONYMIZATION_ENABLED=false`) are ignored and a `target.prod_override_ignored` warning is logged.
 
@@ -191,6 +193,19 @@ With `ANON_CATALOG_PATH` set, column verdicts are reviewed with:
 npm run anon:catalog -- list
 npm run anon:catalog -- set dbo.Clienti.Note sensitive --kind text
 ```
+
+Columns without a verdict can be classified on demand. Only metadata (schema, table, column, SQL type) is read and sent to a local model; the result is a list of proposals that change nothing until accepted:
+
+```bash
+npm run anon:catalog -- classify --target prod-main            # needs TARGETS_FILE and the target connection env var
+npm run anon:catalog -- classify --target prod-main --eval 200 # precision against existing verdicts, stores nothing
+npm run anon:catalog -- proposals --status review
+npm run anon:catalog -- accept --status proposed-safe
+npm run anon:catalog -- accept dbo.Clienti.Note --as sensitive --kind text
+npm run anon:catalog -- reject dbo.Clienti.Codice
+```
+
+The mcp-dashboard "Classifica schema" button runs the same commands with the SQL service environment.
 
 Details and the anonymization threat model are in [docs/ANONYMIZATION.md](docs/ANONYMIZATION.md).
 
