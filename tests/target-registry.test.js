@@ -368,3 +368,42 @@ test("environment is validated against an enum and production aliases stay fence
   const invalidPath = writeTempTargetsFile({ targets: [prodTarget({ environment: "prod-eu" })] });
   await assert.rejects(() => loadTargetRegistry(invalidPath, { env: {} }), /Invalid targets configuration/);
 });
+
+function anonymizedTarget(overrides) {
+  return {
+    target_id: "prod-main",
+    display_name: "Prod",
+    environment: "prod",
+    db_kind: "sqlserver",
+    status: "active",
+    connection_env_var: "DB_PROD_MAIN_CONNECTION_STRING",
+    read_enabled: true,
+    write_enabled: false,
+    anonymization_enabled: true,
+    anonymization_mode: "deterministic",
+    llm_provider: "none",
+    llm_model: "",
+    max_rows: 100,
+    max_result_bytes: 1024,
+    allowed_tools: ["db_target_info", "db_policy_info", "db_read"],
+    ...overrides
+  };
+}
+
+test("deterministic anonymization is accepted without a provider or model", async () => {
+  const registry = await loadTargetRegistry(writeTempTargetsFile({ targets: [anonymizedTarget({})] }), { env: {} });
+  const target = registry.get("prod-main");
+  assert.equal(target.anonymization_enabled, true);
+  assert.equal(target.llm_provider, "none");
+});
+
+test("provider-based anonymization modes still require a provider", async () => {
+  for (const mode of ["hybrid", "direct", "llm-strict"]) {
+    await assert.rejects(
+      () => loadTargetRegistry(writeTempTargetsFile({ targets: [anonymizedTarget({ anonymization_mode: mode })] }), { env: {} }),
+      /only .{0,2}deterministic.{0,2} works without a provider/,
+      mode
+    );
+  }
+});
+

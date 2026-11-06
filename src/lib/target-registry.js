@@ -64,10 +64,11 @@ const targetSchema = z
       }
     }
 
-    if (target.anonymization_enabled && target.llm_provider === "none") {
+    // Only deterministic anonymization (rules, catalog, value floor) works without a provider.
+    if (target.anonymization_enabled && target.llm_provider === "none" && target.anonymization_mode !== "deterministic") {
       ctx.addIssue({
         code: "custom",
-        message: "llm_provider cannot be \"none\" when anonymization is enabled.",
+        message: `llm_provider cannot be "none" when anonymization mode is "${target.anonymization_mode}": only "deterministic" works without a provider.`,
         path: ["llm_provider"]
       });
     }

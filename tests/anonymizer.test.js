@@ -142,3 +142,19 @@ test("clampRowsToByteLimit runs in linear time", () => {
   assert.equal(clamped.length, rows.length);
   assert.ok(elapsedMs < 1000, `took ${elapsedMs}ms`);
 });
+
+test("responses report the provider actually consulted", async () => {
+  const base = {
+    queryResult: { rows: [{ x: "a" }], sql_text: "SELECT x FROM dbo.u", max_result_bytes_applied: null, truncated: false },
+    providerConfig: { hashSalt: "salt-salt-salt", failOpen: false, timeoutMs: 1000, fieldIdentification: "heuristic" }
+  };
+  const run = (target, fieldIdentification = "heuristic") => anonymizeQueryResult({
+    ...base,
+    providerConfig: { ...base.providerConfig, fieldIdentification },
+    target: { anonymization_enabled: true, environment: "prod", llm_model: "m", ...target }
+  });
+  assert.equal((await run({ anonymization_mode: "deterministic", llm_provider: "ollama" }, "hybrid")).anonymization_provider, "none");
+  assert.equal((await run({ anonymization_mode: "deterministic", llm_provider: "none" })).anonymization_provider, "none");
+  assert.equal((await run({ anonymization_mode: "hybrid", llm_provider: "ollama" }, "heuristic")).anonymization_provider, "none");
+});
+
