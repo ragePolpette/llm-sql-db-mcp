@@ -9,7 +9,8 @@ import {
   createCatalog,
   flushAllCatalogs,
   getCatalog,
-  isEnumEvidence
+  isEnumEvidence,
+  loadCatalogFile
 } from "../src/lib/anonymization/catalog.js";
 import { runCli } from "../src/cli/anon-catalog.js";
 
@@ -208,3 +209,23 @@ test("flushAllCatalogs forces throttled observations to disk", () => {
   assert.ok("dbo.t.second" in afterFlush.targets["dev-main"]);
   __catalogTestUtils.resetCatalogCache();
 });
+
+test("an automatic sensitive verdict does not keep file names and dates masked", async () => {
+  const file = tempFile();
+  const seeded = loadCatalogFile(file);
+  seeded.targets["prod-main"] = {
+    "dbo.t.nomefile": { status: "auto-sensitive", kind: "name", reason: "heuristic:name" },
+    "dbo.t.datainvio": { status: "auto-sensitive", kind: "text", reason: "provider:text" }
+  };
+  fs.writeFileSync(file, JSON.stringify(seeded));
+  const catalog = createCatalog({ filePath: file, now: memoryNow() });
+
+  const name = await run(catalog, [{ nomefile: "IT01234567890_00001.xml" }], "nomefile");
+  assert.equal(name.out[0].nomefile, "IT01234567890_00001.xml");
+  assert.equal(name.report.by_reason["safe:file-name"], 1);
+
+  const date = await run(catalog, [{ datainvio: "2026-11-05T10:31:00.000Z" }], "datainvio");
+  assert.equal(date.out[0].datainvio, "2026-11-05T10:31:00.000Z");
+  assert.equal(date.report.by_reason["safe:datetime"], 1);
+});
+

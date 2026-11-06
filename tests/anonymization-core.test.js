@@ -8,7 +8,7 @@ function resolvedOrigins(...columns) {
   return Object.fromEntries(columns.map(column => [column, { schema: "dbo", table: "t", column }]));
 }
 
-test("anonymizeRows preserves cf and partita iva while still masking real sensitive keys", async () => {
+test("anonymizeRows preserves partita iva, masks personal fiscal codes and real sensitive keys", async () => {
   const rows = await anonymizeRows(
     [
       {
@@ -35,7 +35,7 @@ test("anonymizeRows preserves cf and partita iva while still masking real sensit
   assert.equal(rows[0].Id, 1);
   assert.match(rows[0].Email, /^user_[a-f0-9]{10}@example\.invalid$/);
   assert.equal(rows[0].PartitaIva, "12345678901");
-  assert.equal(rows[0].CodiceFiscale, "RSSMRA80A01H501U");
+  assert.match(rows[0].CodiceFiscale, /^CF_[A-F0-9]{10}$/);
   assert.match(rows[0].Telefono, /^\+39\d{10}$/);
 });
 
@@ -482,4 +482,104 @@ test("a provider verdict cached for one target is not reused for another target"
 test("cache scopes keep case-distinct target ids apart", () => {
   const { buildCacheScope } = __anonymizationCoreTestUtils;
   assert.notEqual(buildCacheScope("client-a", "SELECT 1 FROM t"), buildCacheScope("CLIENT-A", "SELECT 1 FROM t"));
+});
+
+test("personal fiscal codes are masked in cf columns, VAT numbers and company codes stay in clear", async () => {
+  const rows = await anonymizeRows(
+    [
+      { cf: "RSSMRA80A01H501U", piva: "12345678901" },
+      { cf: "RSSMRA80A01H50MM", piva: null },
+      { cf: "rssmra80a01h501u", piva: null },
+      { cf: "12345678901", piva: null },
+      { cf: "RSSMRA80A01H501A", piva: null }
+    ],
+    BASE_CFG,
+    { columnOrigins: resolvedOrigins("cf", "piva") }
+  );
+  assert.match(rows[0].cf, /^CF_[A-F0-9]{10}$/);
+  assert.match(rows[1].cf, /^CF_[A-F0-9]{10}$/, "omocodia");
+  assert.equal(rows[2].cf, rows[0].cf, "case does not change the pseudonym");
+  assert.equal(rows[3].cf, "12345678901", "company fiscal code = VAT number");
+  assert.equal(rows[4].cf, "RSSMRA80A01H501A", "an invalid control character is not a fiscal code");
+  assert.equal(rows[0].piva, "12345678901");
+});
+
+test("personal fiscal codes inside file names and free text are masked, the rest is kept", async () => {
+  const [row] = await anonymizeRows(
+    [{ nomefile: "ITVRDGPP85T10F205R_00001.xml", stato: "cliente VRDGPP85T10F205R ok" }],
+    BASE_CFG,
+    { columnOrigins: resolvedOrigins("nomefile", "stato") }
+  );
+  assert.match(row.nomefile, /^ITCF_[A-F0-9]{10}_00001\.xml$/);
+  assert.match(row.stato, /^cliente CF_[A-F0-9]{10} ok$/);
+});
+
+test("mixed-case blobs are not mistaken for fiscal codes", async () => {
+  const blob = "QmFzZTY0VRDGPP85t10F205RbG9i";
+  const [row] = await anonymizeRows([{ stato: blob, tipo: "VRDGPP85T10F205RX" }], BASE_CFG, {
+    columnOrigins: resolvedOrigins("stato", "tipo")
+  });
+  assert.equal(row.stato, blob);
+  assert.equal(row.tipo, "VRDGPP85T10F205RX", "a longer alphanumeric run is not a fiscal code");
+});
+
+test("file names are not person names, even when the provider says so", async () => {
+  __anonymizationCoreTestUtils.resetKindCache();
+  const rows = [{ nomefile: "IT01234567890_00001.xml", NomeFileOriginale: "fattura marzo.pdf", file_name: "a.zip" }];
+  const [heuristic] = await anonymizeRows(rows, BASE_CFG, {
+    columnOrigins: resolvedOrigins("nomefile", "NomeFileOriginale", "file_name")
+  });
+  assert.deepEqual(heuristic, rows[0]);
+
+  __anonymizationCoreTestUtils.resetKindCache();
+  const [llm] = await anonymizeRows(rows, llmCfg(), {
+    sqlText: "SELECT nomefile, NomeFileOriginale, file_name FROM dbo.t",
+    columnOrigins: resolvedOrigins("nomefile", "NomeFileOriginale", "file_name"),
+    fetchImpl: llmFetch({ nomefile: "name", nome_file_originale: "name", file_name: "text" })
+  });
+  assert.deepEqual(llm, rows[0]);
+});
+
+test("file names stay masked when the column is computed", async () => {
+  const [row] = await anonymizeRows([{ nomefile: "Rossi" }], BASE_CFG, {
+    sqlText: "SELECT cognome AS nomefile FROM dbo.t",
+    columnOrigins: { nomefile: null }
+  });
+  assert.notEqual(row.nomefile, "Rossi");
+});
+
+test("plain date/time columns stay in clear, birth dates and computed columns are masked", async () => {
+  __anonymizationCoreTestUtils.resetKindCache();
+  const rows = [
+    {
+      DataCreazione: "2026-11-05T10:31:00.000Z",
+      data_scadenziario: "2026-12-31",
+      datainvio: "2026-11-05 10:31:00",
+      data_nascita: "1980-01-01T00:00:00.000Z"
+    }
+  ];
+  const [llm] = await anonymizeRows(rows, llmCfg(), {
+    sqlText: "SELECT DataCreazione, data_scadenziario, datainvio, data_nascita FROM dbo.t",
+    columnOrigins: resolvedOrigins("DataCreazione", "data_scadenziario", "datainvio", "data_nascita"),
+    fetchImpl: llmFetch({ data_creazione: "date", data_scadenziario: "text", datainvio: "date", data_nascita: "none" })
+  });
+  assert.equal(llm.DataCreazione, "2026-11-05T10:31:00.000Z");
+  assert.equal(llm.data_scadenziario, "2026-12-31");
+  assert.equal(llm.datainvio, "2026-11-05 10:31:00");
+  assert.match(llm.data_nascita, /^DATE_/);
+
+  const [derived] = await anonymizeRows([{ x: "1980-01-01T00:00:00.000Z" }], BASE_CFG, {
+    sqlText: "SELECT data_nascita AS x FROM dbo.t",
+    columnOrigins: { x: null }
+  });
+  assert.notEqual(derived.x, "1980-01-01T00:00:00.000Z", "aliases cannot unlock dates");
+});
+
+test("a column mixing dates and other text is not treated as a date column", async () => {
+  const [, second] = await anonymizeRows(
+    [{ riferimento_cliente: "2026-11-05" }, { riferimento_cliente: "Mario Rossi" }],
+    BASE_CFG,
+    { columnOrigins: resolvedOrigins("riferimento_cliente") }
+  );
+  assert.notEqual(second.riferimento_cliente, "Mario Rossi");
 });

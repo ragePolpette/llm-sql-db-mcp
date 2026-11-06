@@ -16,6 +16,11 @@ npm run anon:catalog -- set dbo.Ordini.Stato safe
 - Machine evidence is kept per `target_id`, so dev data never vouches for prod. Human verdicts apply to all targets.
 - Verdicts can only be edited with the CLI, never through MCP tools.
 - Keep the catalog file outside the repository: it contains schema names.
+- File-name columns and plain date/time columns (see [SECURITY.md](../SECURITY.md#file-names-and-dates)) stay in clear even when the catalog holds an older `auto-sensitive` verdict for them; only a human verdict masks them.
+
+## Value floor
+
+Every value that is not otherwise masked goes through a deterministic floor: e-mail addresses, checksum-valid IBANs and checksum-valid personal fiscal codes (16 characters, omocodia included) are always replaced, even in columns judged technical. VAT numbers and 11-digit company fiscal codes are not touched.
 
 ## Threat model
 

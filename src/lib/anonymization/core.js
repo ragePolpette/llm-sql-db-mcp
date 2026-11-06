@@ -5,6 +5,15 @@ import { anonymizeWithOllama } from "../providers/ollama.js";
 const EMAIL_REGEX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const PHONE_TEXT_REGEX = /(?=.*[+\s().-])(\+?\d[\d\s().-]{6,}\d)/g;
 const IBAN_CANDIDATE_REGEX = /\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]){11,30}\b/g;
+// Italian personal fiscal code (codice fiscale of a natural person): 16 characters, digits may be
+// replaced by LMNPQRSTUV (omocodia). The 11-digit fiscal code of companies (= VAT number) never matches.
+// No left word boundary: SDI file names embed the code after the country prefix (IT<code>_00001.xml).
+// Single-case candidates and the checksum keep false positives out of base64 and other mixed-case blobs.
+const PERSONAL_FISCAL_CODE_REGEX =
+  /[A-Z]{6}[0-9LMNPQRSTUV]{2}[ABCDEHLMPRST][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z](?![A-Z0-9])/gi;
+const FISCAL_CODE_ODD_VALUES = [1, 0, 5, 7, 9, 13, 15, 17, 19, 21, 2, 4, 18, 20, 11, 3, 6, 8, 12, 14, 16, 10, 22, 25, 24, 23];
+// ISO date/datetime strings, as the SQL Server driver serializes date and time columns.
+const ISO_DATETIME_REGEX = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
 const KIND_VALUES = new Set(["email", "phone", "name", "org", "address", "city", "text", "date", "iban"]);
 // Kinds that a provider "none" verdict can never downgrade: a heuristic hit on these is a floor.
 const STRONG_KINDS = new Set(["email", "phone", "name", "iban", "date"]);
@@ -234,6 +243,32 @@ function isShortEnumProfile(normalizedKey, profile) {
   });
 }
 
+// File names and paths (nomefile, NomeFile, filename, nome_file_originale, ...) are technical, not
+// person names. Personal data embedded in them is still caught by the value floor.
+function isFileNameKey(normalizedKey) {
+  const tokens = tokenSetFromKey(normalizedKey);
+  const compact = compactKey(normalizedKey);
+  return hasAnyToken(tokens, ["file", "filename", "files"]) || compact.includes("nomefile") || compact.includes("filename");
+}
+
+// A column whose every value is an ISO date/datetime. Birth dates never get here: the name heuristic
+// classifies them as "date" first.
+function isDateTimeProfile(profile) {
+  if (!profile || profile.values.length === 0) return false;
+  return profile.values.every(value => ISO_DATETIME_REGEX.test(value));
+}
+
+// File names and plain date/time columns stay in clear whatever the provider or an automatic catalog
+// verdict says. Source columns only (aliases cannot be trusted), and never against a name heuristic
+// such as data_nascita. The value floor still masks e-mails, IBANs and personal fiscal codes inside
+// file names.
+function decideStructuralSafe(key, profile, derived) {
+  if (derived || inferKindHeuristic(key)) return null;
+  if (isFileNameKey(normalizeKey(key))) return { kind: NONE_KIND, reason: "safe:file-name" };
+  if (isDateTimeProfile(profile)) return { kind: NONE_KIND, reason: "safe:datetime" };
+  return null;
+}
+
 function isTechnicalSafeColumn(key, value, columnProfiles, profileKey = key) {
   const normalizedKey = normalizeKey(key);
   if (!normalizedKey) return false;
@@ -339,6 +374,10 @@ function inferKindHeuristic(key) {
 
   if (EXACT_KEY_KIND.has(normalized)) {
     return EXACT_KEY_KIND.get(normalized);
+  }
+
+  if (isFileNameKey(normalized)) {
+    return null;
   }
 
   const compact = compactKey(normalized);
@@ -565,9 +604,10 @@ function replaceByKind(kind, key, value, cfg) {
 
 function maskInlineWithHashes(value, cfg) {
   const salt = getHashSalt(cfg);
-  return String(value)
+  const masked = String(value)
     .replace(EMAIL_REGEX, match => `user_${stableDigest(salt, "inline_email", match, 10).toLowerCase()}@example.invalid`)
     .replace(PHONE_TEXT_REGEX, match => toPhoneFromDigest(salt, "inline_phone", match));
+  return maskPersonalFiscalCodes(masked, salt);
 }
 
 function isValidIban(candidate) {
@@ -584,16 +624,39 @@ function isValidIban(candidate) {
   return remainder === 1;
 }
 
+// Checks the control character of a personal fiscal code (16 characters, omocodia included, one case).
+function isValidPersonalFiscalCode(candidate) {
+  const raw = String(candidate);
+  const code = raw.toUpperCase();
+  if (code.length !== 16) return false;
+  if (raw !== code && raw !== raw.toLowerCase()) return false;
+  let sum = 0;
+  for (let i = 0; i < 15; i += 1) {
+    const ch = code[i];
+    const index = /\d/.test(ch) ? Number(ch) : ch.charCodeAt(0) - 65;
+    sum += i % 2 === 0 ? FISCAL_CODE_ODD_VALUES[index] : index;
+  }
+  return String.fromCharCode(65 + (sum % 26)) === code[15];
+}
+
+function maskPersonalFiscalCodes(text, salt) {
+  return text.replace(PERSONAL_FISCAL_CODE_REGEX, match =>
+    isValidPersonalFiscalCode(match) ? `CF_${stableDigest(salt, "inline_cf", match.toUpperCase(), 10)}` : match
+  );
+}
+
 // Deterministic floor applied to every string, even in columns judged technical/safe:
-// e-mail addresses and checksum-valid IBANs are never allowed through in clear.
+// e-mail addresses, checksum-valid IBANs and checksum-valid personal fiscal codes are never allowed
+// through in clear. VAT numbers (and the 11-digit fiscal code of companies) stay in clear by design.
 function maskSensitiveValuePatterns(value, cfg) {
   if (typeof value !== "string") return value;
   const salt = getHashSalt(cfg);
-  return value
+  const masked = value
     .replace(EMAIL_REGEX, match => `user_${stableDigest(salt, "inline_email", match, 10).toLowerCase()}@example.invalid`)
     .replace(IBAN_CANDIDATE_REGEX, match =>
       isValidIban(match) ? `IBAN_${stableDigest(salt, "inline_iban", match.replace(/\s+/g, ""), 10)}` : match
     );
+  return maskPersonalFiscalCodes(masked, salt);
 }
 
 function isUnionLikeSql(sqlText) {
@@ -656,7 +719,7 @@ function observationStatusFor(reason) {
   if (reason.startsWith("catalog:auto-sensitive")) return "sensitive";
   if (reason.startsWith("catalog:auto-safe")) return "revalidate";
   if (reason.startsWith("heuristic:") || reason.startsWith("provider:")) return "sensitive";
-  if (reason.startsWith("safe:technical")) return "technical";
+  if (reason.startsWith("safe:technical") || reason === "safe:file-name") return "technical";
   return "pending";
 }
 
@@ -700,6 +763,9 @@ function deterministicFallback(rows, cfg, fieldKindMap, cacheScope = GLOBAL_CACH
       const catalogEntry = catalogCtx && catalogKey ? catalogCtx.lookup(catalogKey) : null;
       const profile = columnProfiles?.get(normalizeKey(key)) || null;
       let decision = decideFromCatalog(catalogEntry, derived);
+      if (!decision || decision.reason === "catalog:auto-sensitive") {
+        decision = decideStructuralSafe(classKey, profile, derived) ?? decision;
+      }
       if (!decision) {
         decision = resolveKindForValue(classKey, value, fieldKindMap, cacheScope, columnProfiles, derived, key, trust);
         if (
@@ -878,7 +944,7 @@ async function identifyFieldsWithProvider(rows, cfg, fetchImpl, cacheScope = GLO
     "Do not use text as a generic fallback for every description field.",
     "Use org only for real company or institution names.",
     "Use name only for person names.",
-    "Italian fiscal codes and VAT numbers are not sensitive in this DB context: choose none for them.",
+    "Italian VAT numbers and 11-digit company fiscal codes are not sensitive in this DB context: choose none for them. Personal fiscal codes (16 characters) are masked deterministically, whatever kind you choose.",
     "If the field is not clearly sensitive, choose none.",
     "Do not add extra text."
   ].join(" ");

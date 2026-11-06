@@ -7,6 +7,7 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 ## [Unreleased]
 
 ### Security
+- Personal fiscal codes are no longer returned in clear. The value floor now replaces every checksum-valid 16-character fiscal code (omocodia included, upper or lower case) with `CF_<digest>`, in any column and inside free text or file names. VAT numbers and 11-digit company fiscal codes stay in clear. The provider prompt no longer calls personal fiscal codes not sensitive.
 - SQL guard rewritten as a single-pass T-SQL tokenizer. The previous regex chain stripped comments before string literals, so `SELECT '--'; DROP TABLE t` and `SELECT 1 AS [a']; DROP TABLE t; SELECT ']'` passed the read guard. Multi-statement batches (any `;` followed by more code, or a second top-level statement without `;`), `GO`, unterminated literals or comments, unbalanced parentheses, transaction control, `DECLARE`, `SET` in reads, `WAITFOR`, `OPENROWSET`/`OPENQUERY`/`OPENDATASOURCE` and other non-DML statements are now rejected. Queries that used one of these keywords as a bare identifier must quote it (`[name]`).
 - Production fence is enforced in code: `environment` must be one of `dev`, `test`, `qa`, `uat`, `staging`, `prod` (case-insensitive, aliases `development` and `production`); other values now fail at startup. On `prod` targets `write_enabled` is forced to `false`, `db_write` is removed from `allowed_tools`, the policy engine always denies `db_write`, and `TARGET_<ID>_WRITE_ENABLED=true` / `TARGET_<ID>_ANONYMIZATION_ENABLED=false` are ignored with a warning. A prod target with `anonymization_enabled=false` in the registry is still accepted, with a startup warning. `db_write` was removed from the prod target in `targets.json`.
 - Rows returned by `db_write` (an `OUTPUT` clause) are now anonymized when the target requires anonymization; `db_write` responses include the `anonymization_*` fields.
@@ -16,6 +17,7 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 - Documented that raw sample values are sent to the local LLM provider during classification and that fiscal codes and VAT numbers are treated as safe identifiers by design (SECURITY.md).
 
 ### Changed
+- File-name columns (`nomefile`, `filename`, `nome_file_originale`, ...) are no longer classified as person names, and source columns holding only ISO dates or datetimes are no longer masked as text (`safe:file-name`, `safe:datetime`). Both rules take precedence over provider verdicts and automatic `auto-sensitive` catalog entries, never over a human verdict, a birth-date name heuristic, or computed columns.
 - `db_read` streams the first result set and stops at `max_rows + 1` rows or at `max_result_bytes`, instead of loading the whole result in memory. `total_rows_before_limits` now counts rows read (at most `max_rows + 1`), not the full result size.
 - `db_read` runs in an explicit `READ COMMITTED` transaction that is always rolled back.
 - Concurrent first requests to a target share a single connection pool; a failed connection attempt is no longer cached.

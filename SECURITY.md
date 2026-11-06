@@ -75,7 +75,16 @@ For targets with an LLM provider (`llm_provider` set to `lmstudio` or `ollama`),
 
 ### Fiscal codes and VAT numbers
 
-Columns named like an Italian fiscal code (`cf`, `codice_fiscale`, `codfiscale`, ...) or VAT number (`partita_iva`, `piva`, `vat`, ...) are treated as safe identifiers and returned in clear, and the provider prompt tells the model to classify them as not sensitive. This is a deliberate choice for the databases this server was built for: there these values are the business keys that operators use to correlate records across queries and with external systems, and masking them would make diagnostics impossible. VAT numbers identify businesses and are public. A natural person's fiscal code, however, is personal data and encodes name, birth date, sex, and place of birth. If that is not acceptable for a target, mark the columns as sensitive with the catalog CLI (`npm run anon:catalog -- set dbo.Clienti.CodiceFiscale sensitive --kind text`), which overrides the safe rule, or exclude them at the database level.
+Columns named like an Italian fiscal code (`cf`, `codice_fiscale`, `codfiscale`, ...) or VAT number (`partita_iva`, `piva`, `vat`, ...) are treated as technical columns, because in the databases this server was built for they are the business keys that operators use to correlate records.
+
+- VAT numbers, and the 11-digit fiscal code of companies (which is the VAT number), identify businesses, are public, and are returned in clear.
+- The 16-character fiscal code of a natural person is personal data: it encodes name, birth date, sex, and place of birth. A deterministic value floor replaces every checksum-valid personal fiscal code (omocodia included, upper or lower case) with `CF_<digest>`, in any column and inside free text or file names (for example the SDI file name `IT<code>_00001.xml`). The pseudonym is stable for a given `ANON_HASH_SALT`, so records can still be correlated across queries, but not with external systems.
+
+To mask a whole column regardless of its values, mark it as sensitive with the catalog CLI (`npm run anon:catalog -- set dbo.Clienti.PartitaIva sensitive --kind text`).
+
+### File names and dates
+
+Source columns whose name refers to a file (`nomefile`, `NomeFile`, `filename`, `nome_file_originale`, ...) and source columns whose values are all ISO dates or datetimes (creation, sending, due dates) are returned in clear, whatever the provider or an automatic catalog verdict says. The value floor still applies to file names. These rules never apply to computed columns or aliases, and never override a name heuristic such as `data_nascita` or `birth_date`, which stays masked as a date. A human `sensitive` verdict in the catalog overrides them.
 
 More detail: [docs/ANONYMIZATION.md](./docs/ANONYMIZATION.md).
 
