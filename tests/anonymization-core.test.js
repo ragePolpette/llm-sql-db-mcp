@@ -634,6 +634,20 @@ test("the report says when and why provider classification failed", async () => 
   assert.equal(report.provider.classified, 1);
 
   await anonymizeRows([{ x: "a" }], BASE_CFG, { onReport: r => { report = r; } });
-  assert.equal(report.provider.status, "skipped:heuristic");
+  assert.equal(report.provider.status, "skipped:deterministic", "BASE_CFG is deterministic: no provider call");
+});
+
+test("deterministic mode never calls the provider, even with hybrid field identification", async () => {
+  __anonymizationCoreTestUtils.resetKindCache();
+  let called = false;
+  let report;
+  await anonymizeRows([{ Descrizione: "x" }], { ...llmCfg(), mode: "deterministic" }, {
+    sqlText: "SELECT Descrizione FROM dbo.t",
+    columnOrigins: resolvedOrigins("Descrizione"),
+    fetchImpl: async () => { called = true; throw new Error("must not be called"); },
+    onReport: r => { report = r; }
+  });
+  assert.equal(called, false);
+  assert.equal(report.provider.status, "skipped:deterministic");
 });
 
