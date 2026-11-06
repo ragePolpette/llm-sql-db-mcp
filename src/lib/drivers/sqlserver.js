@@ -159,7 +159,7 @@ async function describeColumnOrigins(pool, sqlText, parameters) {
     request.input("tsql", sql.NVarChar(sql.MAX), sqlText);
     request.input("params", sql.NVarChar(sql.MAX), declarations.length > 0 ? declarations.join(", ") : null);
     described = await request.query(
-      "SELECT name, source_schema, source_table, source_column, is_hidden, error_number, error_message, error_type_desc " +
+      "SELECT name, source_database, source_schema, source_table, source_column, is_hidden, error_number, error_message, error_type_desc " +
         "FROM sys.dm_exec_describe_first_result_set(@tsql, @params, 1)"
     );
   } catch (error) {
@@ -181,7 +181,7 @@ async function describeColumnOrigins(pool, sqlText, parameters) {
     origins[row.name] =
       Object.prototype.hasOwnProperty.call(origins, row.name) || !row.source_column
         ? null
-        : { schema: row.source_schema ?? null, table: row.source_table ?? null, column: row.source_column };
+        : { database: row.source_database ?? null, schema: row.source_schema ?? null, table: row.source_table ?? null, column: row.source_column };
   }
   if (Object.keys(origins).length === 0) {
     return { origins: null, status: "unavailable", reason: "describe_empty", detail: null };

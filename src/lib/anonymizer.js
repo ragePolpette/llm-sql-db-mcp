@@ -141,6 +141,9 @@ export async function anonymizeQueryResult({
   const maskedRows = await anonymizeRows(queryResult.rows, anonymizerConfig, {
     sqlText: queryResult.sql_text,
     columnOrigins,
+    columnTypes: Array.isArray(queryResult.columns)
+      ? Object.fromEntries(queryResult.columns.filter(column => column?.name).map(column => [column.name, column.type]))
+      : null,
     catalog: getCatalog(providerConfig.catalogPath),
     targetId: target.target_id,
     onReport: typeof onReport === "function" ? report => onReport({ ...report, origins }) : undefined,
