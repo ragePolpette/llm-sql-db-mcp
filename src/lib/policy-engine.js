@@ -1,6 +1,6 @@
 import { isProductionTarget } from "./target-registry.js";
 
-const TARGET_SCOPED_TOOLS = ["db_target_info", "db_policy_info", "db_read", "db_write"];
+const TARGET_SCOPED_TOOLS = ["db_target_info", "db_policy_info", "db_read", "db_write", "db_ddl"];
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -16,6 +16,7 @@ export function toSafeTargetSummary(target) {
     runtime_status: target.state?.runtime_status ?? null,
     read_enabled: target.read_enabled,
     write_enabled: target.write_enabled,
+    ddl_enabled: Boolean(target.ddl_enabled),
     anonymization_enabled: target.anonymization_enabled,
     llm_provider: target.llm_provider,
     llm_model: target.llm_model
@@ -87,6 +88,15 @@ export function evaluateToolPolicy({ target, toolName }) {
     };
   }
 
+  if (normalizedToolName === "db_ddl" && isProductionTarget(target)) {
+    return {
+      tool_name: normalizedToolName,
+      allowed: false,
+      anonymization_required: false,
+      denial_reason: `DDL is hard-fenced off for prod target "${target.target_id}".`
+    };
+  }
+
   if (!target.allowed_tools.includes(normalizedToolName)) {
     return {
       tool_name: normalizedToolName,
@@ -111,6 +121,24 @@ export function evaluateToolPolicy({ target, toolName }) {
       allowed: false,
       anonymization_required: false,
       denial_reason: `Write access is disabled for target "${target.target_id}".`
+    };
+  }
+
+  if (normalizedToolName === "db_ddl" && !target.ddl_enabled) {
+    return {
+      tool_name: normalizedToolName,
+      allowed: false,
+      anonymization_required: false,
+      denial_reason: `DDL is disabled for target "${target.target_id}".`
+    };
+  }
+
+  if (normalizedToolName === "db_ddl" && target.anonymization_enabled) {
+    return {
+      tool_name: normalizedToolName,
+      allowed: false,
+      anonymization_required: false,
+      denial_reason: `DDL is not available on anonymized target "${target.target_id}".`
     };
   }
 

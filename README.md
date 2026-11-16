@@ -52,6 +52,7 @@ MCP tools:
 - `db_policy_info`
 - `db_read`
 - `db_write`
+- `db_ddl` (two-phase `CREATE TABLE` / `ALTER TABLE`, never on prod, off by default)
 - `run_diagnostic_query` (when enabled by the shipped runtime surface)
 
 ## Architecture
@@ -135,7 +136,7 @@ Runtime settings are read from environment variables. [.env.example](.env.exampl
 - `ANON_CATALOG_PATH` (optional): enables the self-populating column catalog; keep it outside the repository because it contains schema names
 - `ANON_CLASSIFIER_MODEL`, `ANON_CLASSIFIER_PROVIDER` (`ollama` or `lmstudio`), `ANON_CLASSIFIER_TIMEOUT_MS`: local model used only by `anon-catalog classify`, never on the query path
 
-Per-target overrides can be supplied through `TARGET_<TARGET_ID>_...` environment variables for read, write, and anonymization behavior. On `prod` targets, overrides that would enable writes (`TARGET_<ID>_WRITE_ENABLED=true`) or disable anonymization (`TARGET_<ID>_ANONYMIZATION_ENABLED=false`) are ignored and a `target.prod_override_ignored` warning is logged.
+Per-target overrides can be supplied through `TARGET_<TARGET_ID>_...` environment variables for read, write, and anonymization behavior. On `prod` targets, overrides that would enable writes (`TARGET_<ID>_WRITE_ENABLED=true`) or DDL (`TARGET_<ID>_DDL_ENABLED=true`), or that disable anonymization (`TARGET_<ID>_ANONYMIZATION_ENABLED=false`) are ignored and a `target.prod_override_ignored` warning is logged.
 
 With `anonymization_mode: "deterministic"` the provider is never called (rules, column catalog and value floor only), so `llm_provider` may be `"none"` and `llm_model` empty; `hybrid`, `direct` and `llm-strict` still require a provider. Responses report in `anonymization_provider` the provider actually consulted: `none` for `deterministic`, and for any mode but `llm-strict` when `ANON_FIELD_IDENTIFICATION=heuristic`.
 
@@ -169,8 +170,24 @@ Targets with `environment=prod` are always read-only, whatever the registry or t
 
 - `write_enabled` is forced to `false` and `db_write` is removed from `allowed_tools`, with a warning logged at startup
 - the policy engine denies `db_write` on prod targets even if a target object reaches it unfenced
+- `ddl_enabled` is forced to `false` and `db_ddl` is removed from `allowed_tools`, with a warning logged at startup; the policy engine denies `db_ddl` on prod targets as well
 - env overrides that would re-enable writes or disable anonymization are ignored
 - `anonymization_enabled=false` in the registry is still honored, because it is an explicit operator choice, but a `target.prod_anonymization_disabled` warning is logged at startup
+
+### Schema changes (`db_ddl`)
+
+`db_ddl` runs one `CREATE TABLE` or one `ALTER TABLE ... ADD` / `ALTER TABLE ... ALTER COLUMN` statement on a `dbo.<table>`. It is off by default and is meant for development databases.
+
+It is available only when all of these hold: the target is not `prod`, `ddl_enabled` is `true` for the target (registry field or `TARGET_<ID>_DDL_ENABLED`), `db_ddl` is in the target's `allowed_tools`, and anonymization is disabled for the target.
+
+Two phases, so nothing runs on a single call:
+
+1. `db_ddl(target_id, sql)` executes nothing. It returns `status: "confirmation_required"`, the statement, a short `sql_hash`, and a one-time `confirmation_token` valid for 5 minutes.
+2. After the user confirms explicitly, `db_ddl(target_id, sql, confirmation_token)` runs the statement and returns `status: "executed"`.
+
+The token is bound to the target and to the exact text of the statement (a different literal means a different statement), can be used once, lives in memory (a restart invalidates every token), and only its hash is kept; logs carry a derived `token_id`, never the token. A rejected token is reported as `confirmation_invalid` with `reason` `expired`, `reused`, `scope_mismatch` or `unknown`. As with any two-phase confirmation of this kind, the token is returned to the caller: it protects against accidental runs, not against a caller that confirms on its own, so the policy fields above and the guard are the real boundaries.
+
+The guard is stricter than the one for `db_write`: the table name must be `dbo.<name>` (no other schema, no multi-part names, no temporary tables), only the two statements above are accepted, and `DROP`, `TRUNCATE`, `FOREIGN KEY`/`REFERENCES`, DML, `SELECT`, `EXEC`, `SET`, `OPENROWSET`/`OPENQUERY`, `BULK`, transaction and flow-control keywords, a batch separator or a second statement are all rejected. Anything that does not match is rejected before a token is issued, and the statement is validated again on the second call.
 
 ### SQL guard and result limits
 

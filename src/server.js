@@ -10,6 +10,7 @@ import { flushAllCatalogs } from "./lib/anonymization/catalog.js";
 import { anonymizeQueryResult } from "./lib/anonymizer.js";
 import { isOriginAllowed, loadRuntimeConfig } from "./lib/config.js";
 import { closeSqlServerPools, executeSqlServerRead, executeSqlServerWrite } from "./lib/drivers/sqlserver.js";
+import { ConfirmationStore } from "./lib/confirmation-store.js";
 import { createHandlers } from "./lib/handlers.js";
 import { createLogger } from "./lib/logger.js";
 import { runWithRequestContext } from "./lib/request-context.js";
@@ -270,9 +271,14 @@ export async function createApp({
     return session;
   }
 
+  // Un solo store per processo: i token di conferma di db_ddl restano validi anche se il client
+  // si riconnette (nuova sessione MCP) tra le due fasi; un riavvio del server li invalida tutti.
+  const confirmationStore = new ConfirmationStore();
+
   async function createTransportForInitialization() {
     const server = buildMcpServer(config, {
       targetRegistry,
+      confirmationStore,
       env: process.env,
       executeSqlRead: executeSqlServerRead,
       executeSqlWrite: executeSqlServerWrite,

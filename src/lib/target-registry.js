@@ -27,6 +27,7 @@ const targetSchema = z
     connection_env_var: z.string().min(1).regex(/^[A-Z0-9_]+$/),
     read_enabled: z.boolean(),
     write_enabled: z.boolean(),
+    ddl_enabled: z.boolean().default(false),
     anonymization_enabled: z.boolean(),
     anonymization_mode: z.enum(allowedAnonymizationModes),
     anonymization_trust: z.enum(allowedAnonymizationTrust).default("corroborated"),
@@ -161,6 +162,20 @@ function applyTargetEnvOverrides(target, env, warn) {
     }
   }
 
+  const ddlEnabled = env[`${prefix}_DDL_ENABLED`];
+  if (ddlEnabled !== undefined && ddlEnabled !== "") {
+    const parsed = parseBooleanOverride(ddlEnabled, `${prefix}_DDL_ENABLED`);
+    if (production && parsed) {
+      warn("target.prod_override_ignored", {
+        target_id: target.target_id,
+        env_var: `${prefix}_DDL_ENABLED`,
+        reason: "DDL is always disabled for prod targets."
+      });
+    } else {
+      nextTarget.ddl_enabled = parsed;
+    }
+  }
+
   const anonymizationEnabled = env[`${prefix}_ANONYMIZATION_ENABLED`];
   if (anonymizationEnabled !== undefined && anonymizationEnabled !== "") {
     const parsed = parseBooleanOverride(anonymizationEnabled, `${prefix}_ANONYMIZATION_ENABLED`);
@@ -222,6 +237,22 @@ export function applyProductionFence(target, warn = () => {}) {
       reason: "write_enabled forced to false for a prod target."
     });
     nextTarget.write_enabled = false;
+  }
+
+  if (nextTarget.ddl_enabled) {
+    warn("target.prod_ddl_disabled", {
+      target_id: target.target_id,
+      reason: "ddl_enabled forced to false for a prod target."
+    });
+    nextTarget.ddl_enabled = false;
+  }
+
+  if (Array.isArray(nextTarget.allowed_tools) && nextTarget.allowed_tools.includes("db_ddl")) {
+    warn("target.prod_ddl_tool_removed", {
+      target_id: target.target_id,
+      reason: "db_ddl removed from allowed_tools for a prod target."
+    });
+    nextTarget.allowed_tools = nextTarget.allowed_tools.filter(tool => tool !== "db_ddl");
   }
 
   if (Array.isArray(nextTarget.allowed_tools) && nextTarget.allowed_tools.includes("db_write")) {

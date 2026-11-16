@@ -466,3 +466,176 @@ export function assertWriteSafeSql(sql) {
 
   return String(sql).trim();
 }
+
+// ---------------------------------------------------------------------------------------------
+// DDL: una sola istruzione CREATE TABLE o ALTER TABLE ... ADD / ALTER COLUMN su dbo.<tabella>.
+// Tutto il resto (DROP, TRUNCATE, viste, procedure, indici, FK, DML, SQL dinamico, piu' istruzioni)
+// e' fuori. Difesa a strati: questa guardia e' solo uno di essi (policy per target, barriera prod,
+// token di conferma monouso).
+// ---------------------------------------------------------------------------------------------
+
+// Parole vietate in qualunque posizione dello statement DDL. CREATE e ALTER sono ammessi solo
+// dove la grammatica li prevede (vedi assertNoForbiddenDdlKeyword).
+const DDL_FORBIDDEN_KEYWORDS = new Set([
+  "CREATE",
+  "ALTER",
+  "DROP",
+  "TRUNCATE",
+  "EXEC",
+  "EXECUTE",
+  "INSERT",
+  "UPDATE",
+  "DELETE",
+  "MERGE",
+  "SELECT",
+  "INTO",
+  "SET",
+  "FOREIGN",
+  "REFERENCES",
+  "BACKUP",
+  "BULK",
+  "RESTORE",
+  "CHECKPOINT",
+  "CLOSE",
+  "COMMIT",
+  "CONVERSATION",
+  "DBCC",
+  "DEALLOCATE",
+  "DECLARE",
+  "DENY",
+  "DISABLE",
+  "ENABLE",
+  "FETCH",
+  "GOTO",
+  "GRANT",
+  "IF",
+  "KILL",
+  "OPEN",
+  "OPENDATASOURCE",
+  "OPENQUERY",
+  "OPENROWSET",
+  "PRINT",
+  "RAISERROR",
+  "READTEXT",
+  "RECEIVE",
+  "RECONFIGURE",
+  "RETURN",
+  "REVERT",
+  "REVOKE",
+  "ROLLBACK",
+  "SAVE",
+  "SEND",
+  "SETUSER",
+  "SHUTDOWN",
+  "THROW",
+  "UPDATETEXT",
+  "USE",
+  "WAITFOR",
+  "WHILE",
+  "WRITETEXT",
+  "BEGIN",
+  "SIGNATURE"
+]);
+
+const DDL_ONLY_MESSAGE = "Only CREATE TABLE or ALTER TABLE statements are allowed.";
+
+function identifierValue(token) {
+  return token?.type === "word" || token?.type === "quoted" ? token.value : null;
+}
+
+function assertNoForbiddenDdlKeyword(tokens, allowedAlterIndexes) {
+  tokens.forEach((token, index) => {
+    if (token.type !== "word" || !DDL_FORBIDDEN_KEYWORDS.has(token.upper)) {
+      return;
+    }
+    const isLeadingVerb = index === 0 && (token.upper === "CREATE" || token.upper === "ALTER");
+    const isAlterColumn = token.upper === "ALTER" && allowedAlterIndexes.has(index);
+    if (!isLeadingVerb && !isAlterColumn) {
+      throw new SqlGuardError(`Forbidden SQL keyword detected: ${token.upper}.`);
+    }
+  });
+}
+
+function analyzeDdl(sql) {
+  if (typeof sql !== "string" || sql.trim() === "") {
+    throw new SqlGuardError("SQL text is required.");
+  }
+
+  const tokens = stripStatementTerminators(tokenizeSql(sql));
+  if (tokens.length === 0) {
+    throw new SqlGuardError("SQL text is required.");
+  }
+
+  const verb = tokens[0];
+  const isCreate = isWord(verb, "CREATE");
+  const isAlter = isWord(verb, "ALTER");
+  if (!((isCreate || isAlter) && isWord(tokens[1], "TABLE"))) {
+    throw new SqlGuardError(DDL_ONLY_MESSAGE);
+  }
+
+  assertNoBatchSeparator(tokens);
+
+  // Nome: dbo.<tabella>, esplicito. Niente nomi a piu' parti, niente tabelle temporanee.
+  if (!isPunct(tokens[3], ".")) {
+    throw new SqlGuardError("Table name must be schema-qualified with an explicit dbo schema.");
+  }
+  const schemaName = identifierValue(tokens[2]);
+  const tableName = identifierValue(tokens[4]);
+  if (schemaName === null || tableName === null) {
+    throw new SqlGuardError("Table name must be schema-qualified with an explicit dbo schema.");
+  }
+  if (isPunct(tokens[5], ".")) {
+    throw new SqlGuardError("Multi-part table names are not allowed.");
+  }
+  if (tableName.startsWith("#") || schemaName.startsWith("#")) {
+    throw new SqlGuardError("Temporary tables are not allowed.");
+  }
+  if (schemaName.toLowerCase() !== "dbo") {
+    throw new SqlGuardError("Table schema must be dbo.");
+  }
+
+  // ALTER e' ammesso solo come verbo iniziale e in ALTER TABLE <nome> ALTER COLUMN.
+  const allowedAlterIndexes = new Set();
+  if (isAlter && isWord(tokens[5], "ALTER") && isWord(tokens[6], "COLUMN")) {
+    allowedAlterIndexes.add(5);
+  }
+  assertNoForbiddenDdlKeyword(tokens, allowedAlterIndexes);
+
+  computeDepths(tokens);
+
+  if (isCreate && !isPunct(tokens[5], "(")) {
+    throw new SqlGuardError("CREATE TABLE must be followed by a column list.");
+  }
+  if (isAlter && !(isWord(tokens[5], "ADD") || allowedAlterIndexes.has(5))) {
+    throw new SqlGuardError("Only ALTER TABLE ... ADD or ALTER COLUMN is allowed.");
+  }
+
+  return renderMaskedSql(tokens);
+}
+
+export function inspectDdlSafety(sql) {
+  try {
+    return {
+      allowed: true,
+      reason: null,
+      normalizedSql: analyzeDdl(sql)
+    };
+  } catch (error) {
+    if (!(error instanceof SqlGuardError)) {
+      throw error;
+    }
+    return {
+      allowed: false,
+      reason: error.message
+    };
+  }
+}
+
+export function assertDdlSafeSql(sql) {
+  const inspection = inspectDdlSafety(sql);
+  if (!inspection.allowed) {
+    throw new Error(inspection.reason);
+  }
+
+  return String(sql).trim();
+}
