@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { TargetRegistry } from "../src/lib/target-registry.js";
 import { createHandlers } from "../src/lib/handlers.js";
 import { anonymizeQueryResult } from "../src/lib/anonymizer.js";
+import { registerFixedTools } from "../src/lib/tools.js";
 
 function parseErrorEnvelope(result) {
   return JSON.parse(result.content[1].text);
@@ -619,4 +620,65 @@ test("dbRead keeps compile-time SQL errors readable on anonymized targets", asyn
 test("dbRead leaves SQL errors untouched on targets without anonymization", async () => {
   const result = await createFailingHandlers(conversionError(), []).dbRead({ target_id: "dev-main", sql: "SELECT CAST(cognome AS int) FROM dbo.u" });
   assert.match(result.content[0].text, /'Rossi'/);
+});
+
+function getDeclaredOutputKeys(toolName) {
+  const declared = {};
+  registerFixedTools(
+    { registerTool: (name, config) => { declared[name] = Object.keys(config.outputSchema ?? {}); } },
+    createHandlers({ targetRegistry: createTestRegistry() })
+  );
+  return new Set(declared[toolName]);
+}
+
+const READ_SQL_RESULT = {
+  columns: [{ name: "id", nullable: false, type: "Int" }],
+  rows: [{ id: 1 }],
+  row_count: 1,
+  total_rows_before_limits: 1,
+  max_rows_applied: 5,
+  max_result_bytes_applied: 1024,
+  result_bytes: 10,
+  truncated: false,
+  duration_ms: 3
+};
+
+test("dbRead structuredContent only contains fields declared in the db_read outputSchema (no anonymization)", async () => {
+  const handlers = createHandlers({
+    targetRegistry: createTestRegistry(),
+    env: { DB_DEV_MAIN_CONNECTION_STRING: "Server=.;Database=Test;Trusted_Connection=True;" },
+    executeSqlRead: async () => READ_SQL_RESULT
+  });
+
+  const result = await handlers.dbRead({ target_id: "dev-main", sql: "SELECT id FROM dbo.Users" });
+
+  assert.equal(result.isError, undefined);
+  assert.equal("sql_text" in result.structuredContent, false);
+  const declared = getDeclaredOutputKeys("db_read");
+  const undeclared = Object.keys(result.structuredContent).filter(key => !declared.has(key));
+  assert.deepEqual(undeclared, []);
+});
+
+test("dbRead structuredContent only contains fields declared in the db_read outputSchema (anonymized target)", async () => {
+  const handlers = createHandlers({
+    targetRegistry: createTestRegistry(),
+    env: { DB_PROD_MAIN_CONNECTION_STRING: "Server=.;Database=Prod;Trusted_Connection=True;" },
+    executeSqlRead: async () => READ_SQL_RESULT,
+    // Come l'anonymizer reale: restituisce {...queryResult}, quindi riporta anche sql_text ricevuto in input.
+    anonymizeQueryResult: async ({ queryResult }) => ({
+      ...queryResult,
+      anonymization_applied: true,
+      anonymization_provider: "none",
+      anonymization_mode: "deterministic"
+    })
+  });
+
+  const result = await handlers.dbRead({ target_id: "prod-main", sql: "SELECT id FROM dbo.Users" });
+
+  assert.equal(result.isError, undefined);
+  assert.equal(result.structuredContent.anonymization_applied, true);
+  assert.equal("sql_text" in result.structuredContent, false);
+  const declared = getDeclaredOutputKeys("db_read");
+  const undeclared = Object.keys(result.structuredContent).filter(key => !declared.has(key));
+  assert.deepEqual(undeclared, []);
 });

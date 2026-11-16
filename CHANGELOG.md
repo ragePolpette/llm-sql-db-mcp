@@ -19,6 +19,9 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 - `ANON_HASH_SALT` is validated at startup when any active target has anonymization enabled; previously the server started and failed on the first masked value.
 - Documented that raw sample values are sent to the local LLM provider during classification and that fiscal codes and VAT numbers are treated as safe identifiers by design (SECURITY.md).
 
+### Fixed
+- `db_read` no longer returns `sql_text` in `structuredContent`. It is not declared in the tool `outputSchema` (`additionalProperties: false`), so clients that validate the output (Claude Desktop, agent harnesses) discarded every `db_read` response with "data must NOT have additional properties". The field is only an input of the anonymizer; the response already carries `sql`. `db_write` already removed it. A regression test now checks that every key of the `db_read` response is declared in its `outputSchema`, with and without anonymization.
+
 ### Changed
 - `anonymization_mode: "deterministic"` never calls the provider (`provider.status: skipped:deterministic`) and accepts `llm_provider: "none"` with an empty model; the other modes still require a provider. `anonymization_provider` in responses reports the provider actually consulted (`none` when the mode or `ANON_FIELD_IDENTIFICATION=heuristic` skips it). Closes #51.
 - Numeric SQL columns (`int`, `bigint`, `smallint`, `tinyint`, `decimal`, `numeric`, `money`, `smallmoney`, `float`, `real`, `bit`) are never masked. The check uses the SQL type reported in `columns[].type`, not the JSON value, so `bigint` values (serialized as strings) no longer become `TEXT_` (`kept:numeric-type`).
