@@ -363,11 +363,12 @@ export function createHandlers({
             })()
           : {
               ...result,
-              sql_text: normalizedSql,
               anonymization_applied: false,
               anonymization_provider: "none",
               anonymization_mode: target.anonymization_mode
             };
+        // sql_text serve solo come input dell'anonymizer: la risposta espone gia' `sql` e l'outputSchema non lo dichiara.
+        delete finalResult.sql_text;
 
         logDbEvent?.("query_out", {
           tool: "db_read",
