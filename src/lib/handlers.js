@@ -372,6 +372,7 @@ export function createHandlers({
         logDbEvent?.("query_out", {
           tool: "db_read",
           target_id: target.target_id,
+          sql: normalizedSql,
           rowCount: finalResult.row_count,
           truncated: finalResult.truncated,
           anonymizationApplied: finalResult.anonymization_applied,
@@ -402,6 +403,7 @@ export function createHandlers({
         logDbEvent?.("query_failed", {
           tool: "db_read",
           target_id: target.target_id,
+          sql: normalizedSql,
           error: message
         });
         return createErrorResult(message, {
@@ -511,6 +513,7 @@ export function createHandlers({
         logDbEvent?.("query_out", {
           tool: "db_write",
           target_id: target.target_id,
+          sql: normalizedSql,
           rowCount: finalResult.row_count,
           rowsAffected: finalResult.rows_affected,
           truncated: finalResult.truncated,
@@ -535,6 +538,7 @@ export function createHandlers({
         logDbEvent?.("query_failed", {
           tool: "db_write",
           target_id: target.target_id,
+          sql: normalizedSql,
           error: error.message
         });
         return createErrorResult(error.message, {

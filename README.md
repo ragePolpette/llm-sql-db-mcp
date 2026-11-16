@@ -126,7 +126,7 @@ Runtime settings are read from environment variables. [.env.example](.env.exampl
 - `TARGETS_FILE`
 - `SESSION_TTL_MS`
 - `ALLOWED_ORIGINS`
-- `LOG_LEVEL`, `LOG_FORMAT`
+- `LOG_LEVEL`, `LOG_FORMAT`: at `info` the server writes `db.query_out`, `db.query_failed` and `db.anonymizer_decisions`, never the SQL text; `db.query_out` and `db.query_failed` carry `sql_hash` (16 hex characters of the statement's SHA-256) to tell queries apart and to match them with `db.query_in` (debug level only, which also adds a 160-character `sql_preview`)
 - `ANON_HASH_SALT`: required at startup when any active target has anonymization enabled
 - `ANON_FIELD_IDENTIFICATION`
 - `ANON_FAIL_OPEN`
