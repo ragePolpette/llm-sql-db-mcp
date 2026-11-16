@@ -4,7 +4,8 @@ import {
   toSafeTargetInfo,
   toSafeTargetSummary
 } from "./policy-engine.js";
-import { assertReadSafeSql, assertWriteSafeSql } from "./sql-guard.js";
+import { assertDdlSafeSql, assertReadSafeSql, assertWriteSafeSql } from "./sql-guard.js";
+import { CONFIRM_OUTCOME, ConfirmationStore, buildDdlScope, sqlHash } from "./confirmation-store.js";
 import { sanitizeSqlErrorMessage } from "./sql-error-sanitizer.js";
 
 function createJsonResult(payload) {
@@ -183,7 +184,8 @@ export function createHandlers({
   anonymizeQueryResult,
   providerConfig,
   fetchImpl = globalThis.fetch,
-  logDbEvent = null
+  logDbEvent = null,
+  confirmationStore = new ConfirmationStore()
 }) {
   const handlers = {
     async dbToolInfo() {
@@ -193,7 +195,8 @@ export function createHandlers({
         tool_map: {
           discovery: ["db_tool_info", "db_target_list", "db_target_info", "db_policy_info"],
           read: ["db_read", "run_diagnostic_query"],
-          write: ["db_write"]
+          write: ["db_write"],
+          ddl: ["db_ddl"]
         },
         usage_notes: {
           db_target_list: "Punto di ingresso per vedere i target configurati senza esporre secret.",
@@ -201,6 +204,8 @@ export function createHandlers({
           db_policy_info: "Spiega se un tool e' permesso e se richiede anonimizzazione.",
           db_read: "Usa target_id esplicito e solo SQL read-safe.",
           db_write: "Usa target_id esplicito; disponibile solo se il target abilita la write policy.",
+          db_ddl:
+            "Solo CREATE TABLE / ALTER TABLE su dbo in due fasi (token di conferma); mai su prod, disponibile solo se il target abilita ddl_enabled.",
           run_diagnostic_query:
             "Wrapper harness-friendly: risolve dev/prod su un target reale oppure usa target_id esplicito coerente con l'environment e normalizza l'output diagnostico."
         },
@@ -541,6 +546,143 @@ export function createHandlers({
           code: "db_write_failed",
           target_id: targetId,
           tool_name: "db_write"
+        });
+      }
+    },
+
+    async dbDdl({ target_id: targetId, sql, confirmation_token: confirmationToken }) {
+      const target = targetRegistry.get(targetId);
+      if (!target) {
+        return createErrorResult(`Unknown target_id: ${targetId}`, {
+          code: "target_not_found",
+          target_id: targetId
+        });
+      }
+
+      const policy = evaluateToolPolicy({
+        target,
+        toolName: "db_ddl"
+      });
+
+      if (!policy.allowed) {
+        return createErrorResult(policy.denial_reason, {
+          code: "policy_denied",
+          target_id: targetId,
+          tool_name: "db_ddl"
+        });
+      }
+
+      let ddlSql;
+      try {
+        ddlSql = assertDdlSafeSql(sql);
+      } catch (error) {
+        return createErrorResult(error.message, {
+          code: "invalid_sql",
+          target_id: targetId,
+          tool_name: "db_ddl"
+        });
+      }
+
+      const scope = buildDdlScope(target.target_id, ddlSql);
+      const hash = sqlHash(ddlSql);
+
+      if (!confirmationToken) {
+        const issued = confirmationStore.issue(scope);
+        const expiresInSeconds = Math.round(confirmationStore.ttlMs / 1000);
+        logDbEvent?.("ddl_confirmation_requested", {
+          tool: "db_ddl",
+          target_id: target.target_id,
+          sql_hash: hash,
+          token_id: issued.tokenId,
+          expires_in_s: expiresInSeconds
+        });
+        return createJsonResult({
+          target_id: target.target_id,
+          status: "confirmation_required",
+          sql: ddlSql,
+          sql_hash: hash,
+          confirmation_token: issued.token,
+          token_id: issued.tokenId,
+          expires_in_s: expiresInSeconds,
+          message:
+            "Nothing was executed. Show this statement to the user and ask for explicit confirmation in chat, then call db_ddl again with the same target_id, the same sql and this confirmation_token."
+        });
+      }
+
+      const confirmation = confirmationStore.consume(confirmationToken, scope);
+      if (confirmation.outcome !== CONFIRM_OUTCOME.USED) {
+        logDbEvent?.("ddl_confirmation_invalid", {
+          tool: "db_ddl",
+          target_id: target.target_id,
+          sql_hash: hash,
+          token_id: confirmation.tokenId,
+          reason: confirmation.outcome
+        });
+        return createErrorResult(
+          `Confirmation token rejected (${confirmation.outcome}). Call db_ddl without confirmation_token to request a new one.`,
+          {
+            code: "confirmation_invalid",
+            reason: confirmation.outcome,
+            target_id: targetId,
+            tool_name: "db_ddl"
+          }
+        );
+      }
+
+      try {
+        const runtimeBlocker = getTargetRuntimeBlocker(target);
+        if (runtimeBlocker) {
+          throw new Error(runtimeBlocker);
+        }
+
+        const connectionString = getConnectionString(target, env);
+        logDbEvent?.("query_in", {
+          tool: "db_ddl",
+          target_id: target.target_id,
+          sql: ddlSql,
+          sql_hash: hash,
+          token_id: confirmation.tokenId
+        });
+
+        const result = await executeSqlWrite({
+          connectionString,
+          sqlText: ddlSql,
+          parameters: {},
+          maxResultBytes: target.max_result_bytes,
+          driverConfig: sqlDriverConfig
+        });
+
+        logDbEvent?.("query_out", {
+          tool: "db_ddl",
+          target_id: target.target_id,
+          sql: ddlSql,
+          durationMs: result.duration_ms,
+          response: {
+            success: true,
+            sql_hash: hash
+          }
+        });
+
+        return createJsonResult({
+          target_id: target.target_id,
+          status: "executed",
+          sql: ddlSql,
+          sql_hash: hash,
+          token_id: confirmation.tokenId,
+          rows_affected: result.rows_affected,
+          duration_ms: result.duration_ms
+        });
+      } catch (error) {
+        logDbEvent?.("query_failed", {
+          tool: "db_ddl",
+          target_id: target.target_id,
+          sql: ddlSql,
+          error: error.message
+        });
+        return createErrorResult(error.message, {
+          code: "db_ddl_failed",
+          target_id: targetId,
+          tool_name: "db_ddl"
         });
       }
     },

@@ -172,6 +172,7 @@ For all `environment=prod` targets the runtime enforces:
 
 - `write_enabled` is forced to `false` and `db_write` is removed from `allowed_tools` when the registry is loaded, with a warning
 - the policy engine denies `db_write` on any prod target, independently of the target fields
+- the same fence applies to `db_ddl`: `ddl_enabled` is forced to `false` and the tool is removed from `allowed_tools` on prod targets, and the policy engine denies it independently of the target fields; DDL is also refused on anonymized targets, and the confirmation token it issues is not a security boundary on its own (see the README section on schema changes)
 - `TARGET_<ID>_WRITE_ENABLED=true` and `TARGET_<ID>_ANONYMIZATION_ENABLED=false` are ignored with a warning
 - `anonymization_enabled=false` set in the registry is honored as an explicit operator choice, and logged as a warning at every startup
 - `environment` is validated against `dev`, `test`, `qa`, `uat`, `staging`, `prod` (aliases `development`, `production`), so a misspelled production label fails at startup instead of escaping the fence

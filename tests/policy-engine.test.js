@@ -39,7 +39,7 @@ test("evaluateToolPolicy denies disabled targets", () => {
 test("buildPolicyInfo returns all target-scoped policies when tool_name is omitted", () => {
   const info = buildPolicyInfo(activeProdTarget);
   assert.equal(info.tool_name, null);
-  assert.equal(info.available_policies.length, 4);
+  assert.equal(info.available_policies.length, 5);
   assert.equal(info.available_policies.find(item => item.tool_name === "db_read").anonymization_required, true);
 });
 

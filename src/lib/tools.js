@@ -10,6 +10,7 @@ const targetSummarySchema = z.object({
   runtime_status: z.string().nullable(),
   read_enabled: z.boolean(),
   write_enabled: z.boolean(),
+  ddl_enabled: z.boolean(),
   anonymization_enabled: z.boolean(),
   llm_provider: z.string(),
   llm_model: z.string()
@@ -108,6 +109,7 @@ export function registerFixedTools(server, handlers) {
         runtime_status: z.string().nullable(),
         read_enabled: z.boolean(),
         write_enabled: z.boolean(),
+        ddl_enabled: z.boolean(),
         anonymization_enabled: z.boolean(),
         llm_provider: z.string(),
         llm_model: z.string(),
@@ -286,5 +288,44 @@ export function registerFixedTools(server, handlers) {
       }
     },
     handlers.dbWrite
+  );
+
+  server.registerTool(
+    "db_ddl",
+    {
+      title: "Execute DDL (CREATE TABLE / ALTER TABLE)",
+      description:
+        "Two-phase schema change on a non-prod target whose policy enables DDL. Supports a single CREATE TABLE or ALTER TABLE ... ADD / ALTER COLUMN statement on dbo.<table>. The first call executes nothing and returns a one-time confirmation_token: show the statement to the user, obtain explicit confirmation, then call again with the same target_id, the same sql and the token.",
+      inputSchema: {
+        target_id: z.string().min(1).describe("Target identifier. Prod targets are always refused."),
+        sql: z
+          .string()
+          .min(1)
+          .describe("A single CREATE TABLE dbo.<name> (...) or ALTER TABLE dbo.<name> ADD ... / ALTER COLUMN ... statement. DROP, FOREIGN KEY, temp tables, DML, EXEC and multi-statement input are rejected."),
+        confirmation_token: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("One-time token returned by the first call for this exact target and sql. Valid for 5 minutes.")
+      },
+      outputSchema: {
+        target_id: z.string(),
+        status: z.enum(["confirmation_required", "executed"]),
+        sql: z.string(),
+        sql_hash: z.string(),
+        token_id: z.string(),
+        confirmation_token: z.string().optional(),
+        expires_in_s: z.number().int().positive().optional(),
+        message: z.string().optional(),
+        rows_affected: z.number().int().nonnegative().optional(),
+        duration_ms: z.number().int().nonnegative().optional()
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        openWorldHint: false
+      }
+    },
+    handlers.dbDdl
   );
 }
