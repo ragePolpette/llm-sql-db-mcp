@@ -136,6 +136,9 @@ function redactDbPayload(event, payload, level) {
     return {
       tool: payload.tool ?? null,
       target_id: payload.target_id ?? null,
+      // Same fingerprint as query_in, so the two events (and the db_ddl response) can be matched
+      // without ever writing the statement.
+      sql_hash: hashSql(payload.sql),
       row_count: payload.rowCount ?? null,
       rows_affected: payload.rowsAffected ?? null,
       truncated: payload.truncated ?? null,
@@ -163,6 +166,7 @@ function redactDbPayload(event, payload, level) {
     return {
       tool: payload.tool ?? null,
       target_id: payload.target_id ?? null,
+      sql_hash: typeof payload.sql === "string" ? hashSql(payload.sql) : undefined,
       runtime_status: payload.runtime_status ?? null,
       provider: payload.provider ?? null,
       mode: payload.mode ?? null,
