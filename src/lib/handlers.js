@@ -655,6 +655,7 @@ export function createHandlers({
         logDbEvent?.("query_out", {
           tool: "db_ddl",
           target_id: target.target_id,
+          sql: ddlSql,
           durationMs: result.duration_ms,
           response: {
             success: true,
@@ -675,7 +676,7 @@ export function createHandlers({
         logDbEvent?.("query_failed", {
           tool: "db_ddl",
           target_id: target.target_id,
-          sql_hash: hash,
+          sql: ddlSql,
           error: error.message
         });
         return createErrorResult(error.message, {

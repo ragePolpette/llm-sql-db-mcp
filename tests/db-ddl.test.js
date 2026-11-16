@@ -453,3 +453,19 @@ test("db_ddl is registered with a destructive, non-read-only annotation and an o
   assert.equal(tool.inputSchema.confirmation_token.isOptional(), true);
   assert.equal(tool.inputSchema.sql.isOptional(), false);
 });
+
+test("dbDdl passes the statement to query_out and query_failed so the logger can fingerprint it", async () => {
+  const ok = createHarness();
+  const issued = await requestToken(ok.handlers);
+  await ok.handlers.dbDdl({ target_id: "dev-main", sql: CREATE_SQL, confirmation_token: issued.confirmation_token });
+  assert.equal(ok.events.find(event => event.event === "query_out").payload.sql, CREATE_SQL);
+
+  const failing = createHarness({
+    executeSqlWrite: async () => {
+      throw new Error("There is already an object named 'Fat_Prova' in the database.");
+    }
+  });
+  const second = await requestToken(failing.handlers);
+  await failing.handlers.dbDdl({ target_id: "dev-main", sql: CREATE_SQL, confirmation_token: second.confirmation_token });
+  assert.equal(failing.events.find(event => event.event === "query_failed").payload.sql, CREATE_SQL);
+});
