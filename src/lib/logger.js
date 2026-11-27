@@ -114,7 +114,12 @@ function normalizeParameterKeys(parameters) {
   return Object.keys(parameters).sort();
 }
 
-function redactDbPayload(event, payload, level) {
+// Full statement text for the log, or undefined (key omitted) when disabled or not a string.
+function sqlTextField(sqlText, logSqlText) {
+  return logSqlText && typeof sqlText === "string" && sqlText.trim() !== "" ? sqlText : undefined;
+}
+
+function redactDbPayload(event, payload, level, logSqlText = true) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return payload;
   }
@@ -139,6 +144,7 @@ function redactDbPayload(event, payload, level) {
       // Same fingerprint as query_in, so the two events (and the db_ddl response) can be matched
       // without ever writing the statement.
       sql_hash: hashSql(payload.sql),
+      sql: sqlTextField(payload.sql, logSqlText),
       row_count: payload.rowCount ?? null,
       rows_affected: payload.rowsAffected ?? null,
       truncated: payload.truncated ?? null,
@@ -167,6 +173,7 @@ function redactDbPayload(event, payload, level) {
       tool: payload.tool ?? null,
       target_id: payload.target_id ?? null,
       sql_hash: typeof payload.sql === "string" ? hashSql(payload.sql) : undefined,
+      sql: event === "query_failed" ? sqlTextField(payload.sql, logSqlText) : undefined,
       runtime_status: payload.runtime_status ?? null,
       provider: payload.provider ?? null,
       mode: payload.mode ?? null,
@@ -205,7 +212,8 @@ export function createLogger({
   level = "info",
   format = "json",
   stdout = process.stdout,
-  stderr = process.stderr
+  stderr = process.stderr,
+  logSqlText = true
 } = {}) {
   const normalizedLevel = normalizeLogLevel(level);
   const normalizedFormat = normalizeLogFormat(format);
@@ -247,7 +255,7 @@ export function createLogger({
       writeLine(stdout, buildEntry("debug", event, payload));
     },
     dbEvent(event, payload = {}) {
-      const sanitizedPayload = redactDbPayload(event, payload, normalizedLevel);
+      const sanitizedPayload = redactDbPayload(event, payload, normalizedLevel, logSqlText);
       if (normalizedLevel === "debug") {
         writeLine(stdout, buildEntry("debug", `db.${event}`, sanitizedPayload));
         return;

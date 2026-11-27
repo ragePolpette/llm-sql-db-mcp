@@ -63,6 +63,13 @@ test("loadRuntimeConfig parses LOG_LEVEL/LOG_FORMAT and rejects unsupported valu
   );
 });
 
+test("loadRuntimeConfig logs the full SQL text by default and LOG_SQL_TEXT=false turns it off", () => {
+  const cwd = createTempDir();
+
+  assert.equal(loadRuntimeConfig({ cwd, env: {} }).logSqlText, true);
+  assert.equal(loadRuntimeConfig({ cwd, env: { LOG_SQL_TEXT: "false" } }).logSqlText, false);
+});
+
 test("loadRuntimeConfig allows explicit SESSION_TTL_MS=0 to disable expiry", () => {
   const cwd = createTempDir();
   const config = loadRuntimeConfig({

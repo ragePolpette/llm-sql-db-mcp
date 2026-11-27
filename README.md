@@ -126,7 +126,8 @@ Runtime settings are read from environment variables. [.env.example](.env.exampl
 - `TARGETS_FILE`
 - `SESSION_TTL_MS`
 - `ALLOWED_ORIGINS`
-- `LOG_LEVEL`, `LOG_FORMAT`: at `info` the server writes `db.query_out`, `db.query_failed` and `db.anonymizer_decisions`, never the SQL text; `db.query_out` and `db.query_failed` carry `sql_hash` (16 hex characters of the statement's SHA-256) to tell queries apart and to match them with `db.query_in` (debug level only, which also adds a 160-character `sql_preview`)
+- `LOG_SQL_TEXT` (default `true`): full statement text in `sql` on `db.query_out` and `db.query_failed`, on every target and also with anonymization on. Statements can contain literals typed by the caller; set `false` to log only `sql_hash`
+- `LOG_LEVEL`, `LOG_FORMAT`: at `info` the server writes `db.query_out`, `db.query_failed` and `db.anonymizer_decisions`; `db.query_out` and `db.query_failed` carry `sql_hash` (16 hex characters of the statement's SHA-256) to tell queries apart and to match them with `db.query_in` (debug level only, which also adds a 160-character `sql_preview`) and, by default, the full statement in `sql`
 - `ANON_HASH_SALT`: required at startup when any active target has anonymization enabled
 - `ANON_FIELD_IDENTIFICATION`
 - `ANON_FAIL_OPEN`
@@ -216,7 +217,7 @@ The project assumes a pragmatic local or internal security model:
 - the server runs on a workstation or a limited trusted network
 - connection strings stay outside repository files and outside `.env`
 - production targets keep non-bypassable fences
-- logs should not expose raw SQL payloads, raw parameters, or row contents
+- logs never contain parameters or row contents; the statement text is logged by default (`LOG_SQL_TEXT=false` keeps only its hash)
 - client code does not define policy; the target registry does
 
 Output anonymization protects against accidental exposure to a client acting in good faith. It does not protect against a hostile caller inferring values through crafted queries. For that case, restrict the database login at the database level.
