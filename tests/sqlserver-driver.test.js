@@ -32,6 +32,21 @@ test("buildSqlServerConnectionConfig maps runtime config to mssql pool settings"
   });
 });
 
+test("buildSqlServerConnectionConfig keeps mssql defaults when no runtime config is given (CLI callers)", () => {
+  const config = buildSqlServerConnectionConfig("Server=.;Database=App;", {});
+
+  // mssql merges its defaults with Object.assign at connect time: an own key set to undefined would
+  // win over them (Tarn then throws "opt.min must be an integer >= 0").
+  const undefinedKeys = [
+    ...Object.entries(config.pool).filter(([, value]) => value === undefined).map(([key]) => `pool.${key}`),
+    ...["connectionTimeout", "requestTimeout"].filter(key => key in config && config[key] === undefined)
+  ];
+  assert.deepEqual(undefinedKeys, []);
+
+  const merged = Object.assign({ max: 10, min: 0, idleTimeoutMillis: 30000 }, config.pool);
+  assert.ok(Number.isInteger(merged.min) && merged.min >= 0);
+});
+
 test("closeSqlServerPools closes cached pools and clears the cache", async () => {
   const closeOrder = [];
   __sqlServerTestUtils.resetPoolCache();

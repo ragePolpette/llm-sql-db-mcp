@@ -85,17 +85,27 @@ export function buildSqlServerConnectionConfig(connectionString, driverConfig = 
   // object leaves the required `server` setting unset.
   const parsedConnection = new sql.ConnectionPool(connectionString).config;
   const pool = driverConfig.pool ?? {};
+  // Only override what the caller actually set: an explicit `undefined` would replace the mssql/Tarn
+  // defaults and make the pool fail with "opt.min must be an integer >= 0" (CLI callers pass no config).
   return {
     ...parsedConnection,
-    connectionTimeout: driverConfig.connectionTimeoutMs,
-    requestTimeout: driverConfig.requestTimeoutMs,
+    ...definedOnly({
+      connectionTimeout: driverConfig.connectionTimeoutMs,
+      requestTimeout: driverConfig.requestTimeoutMs
+    }),
     pool: {
       ...parsedConnection.pool,
-      max: pool.max,
-      min: pool.min,
-      idleTimeoutMillis: pool.idleTimeoutMs
+      ...definedOnly({
+        max: pool.max,
+        min: pool.min,
+        idleTimeoutMillis: pool.idleTimeoutMs
+      })
     }
   };
+}
+
+function definedOnly(values) {
+  return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined));
 }
 
 // The in-flight promise is cached so that concurrent first requests share one pool instead of
