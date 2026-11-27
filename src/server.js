@@ -189,7 +189,8 @@ export async function createApp({
   const config = loadRuntimeConfig({ cwd });
   const logger = createLogger({
     level: config.logLevel,
-    format: config.logFormat
+    format: config.logFormat,
+    logSqlText: config.logSqlText
   });
   const targetRegistry = await loadTargetRegistry(config.targetsFile, { env: process.env, logger });
   assertHashSaltForAnonymizedTargets(targetRegistry, config.providers);

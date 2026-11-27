@@ -50,9 +50,9 @@ const OK_RESULT = {
   duration_ms: 2
 };
 
-function createHarness(level, { fail = false } = {}) {
+function createHarness(level, { fail = false, logSqlText } = {}) {
   const stdout = memoryStream();
-  const logger = createLogger({ level, stdout });
+  const logger = createLogger({ level, stdout, ...(logSqlText === undefined ? {} : { logSqlText }) });
   const run = async () => {
     if (fail) throw new Error("Invalid object name 'dbo.Anagrafica'.");
     return OK_RESULT;
@@ -68,14 +68,14 @@ function createHarness(level, { fail = false } = {}) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Logger: query_out / query_failed portano l'impronta della query, mai il testo
+// Logger: query_out / query_failed portano l'impronta e (default) il testo completo; LOG_SQL_TEXT=false toglie il testo
 // ---------------------------------------------------------------------------------------------
 
-test("logger: query_out carries the same sql_hash as query_in and never the sql text", () => {
+test("logger: query_out carries the same sql_hash as query_in; with logSqlText=false it never carries the sql text", () => {
   const debugOut = memoryStream();
   const infoOut = memoryStream();
-  const debugLogger = createLogger({ level: "debug", stdout: debugOut });
-  const infoLogger = createLogger({ level: "info", stdout: infoOut });
+  const debugLogger = createLogger({ level: "debug", stdout: debugOut, logSqlText: false });
+  const infoLogger = createLogger({ level: "info", stdout: infoOut, logSqlText: false });
 
   debugLogger.dbEvent("query_in", { tool: "db_read", target_id: "dev-main", sql: READ_SQL, parameters: {} });
   infoLogger.dbEvent("query_out", { tool: "db_read", target_id: "dev-main", sql: READ_SQL, rowCount: 3, truncated: false });
@@ -90,6 +90,21 @@ test("logger: query_out carries the same sql_hash as query_in and never the sql 
   assert.equal(Object.keys(queryOut).includes("sql_preview"), false);
 });
 
+test("logger: by default query_out and query_failed carry the full sql text at info level", () => {
+  const stdout = memoryStream();
+  const logger = createLogger({ level: "info", stdout });
+
+  logger.dbEvent("query_out", { tool: "db_read", target_id: "dev-main", sql: READ_SQL, rowCount: 3 });
+  logger.dbEvent("query_failed", { tool: "db_write", target_id: "dev-main", sql: WRITE_SQL, error: "boom" });
+  logger.dbEvent("query_out", { tool: "db_read", target_id: "dev-main", rowCount: 1 });
+
+  const [out, failed, noSql] = parse(stdout).map(entry => entry.payload);
+  assert.equal(out.sql, READ_SQL);
+  assert.equal(failed.sql, WRITE_SQL);
+  assert.match(out.sql_hash, /^[0-9a-f]{16}$/);
+  assert.equal(Object.keys(noSql).includes("sql"), false);
+});
+
 test("logger: query_out without sql keeps a null sql_hash", () => {
   const stdout = memoryStream();
   createLogger({ level: "info", stdout }).dbEvent("query_out", { tool: "db_read", target_id: "dev-main", rowCount: 1 });
@@ -99,7 +114,7 @@ test("logger: query_out without sql keeps a null sql_hash", () => {
 
 test("logger: query_failed carries sql_hash and the error, driver events carry no sql_hash", () => {
   const stdout = memoryStream();
-  const logger = createLogger({ level: "debug", stdout });
+  const logger = createLogger({ level: "debug", stdout, logSqlText: false });
 
   logger.dbEvent("query_failed", { tool: "db_write", target_id: "dev-main", sql: WRITE_SQL, error: "boom" });
   logger.dbEvent("db_driver_start", { tool: "db_write", target_id: "dev-main", runtime_status: "ready" });
@@ -126,8 +141,8 @@ test("db_read: at debug level query_in and query_out share the sql_hash", async 
   assert.equal(byEvent["db.query_out"].sql_hash, byEvent["db.query_in"].sql_hash);
 });
 
-test("db_read and db_write: at info level query_out has sql_hash and no sql text anywhere", async () => {
-  const { handlers, stdout } = createHarness("info");
+test("db_read and db_write: at info level query_out has sql_hash and, with LOG_SQL_TEXT=false, no sql text anywhere", async () => {
+  const { handlers, stdout } = createHarness("info", { logSqlText: false });
 
   await handlers.dbRead({ target_id: "dev-main", sql: READ_SQL });
   await handlers.dbWrite({ target_id: "dev-main", sql: WRITE_SQL });
@@ -145,7 +160,7 @@ test("db_read and db_write: at info level query_out has sql_hash and no sql text
 });
 
 test("db_read and db_write: a failed query logs db.query_failed with the sql_hash", async () => {
-  const { handlers, stdout } = createHarness("info", { fail: true });
+  const { handlers, stdout } = createHarness("info", { fail: true, logSqlText: false });
 
   await handlers.dbRead({ target_id: "dev-main", sql: READ_SQL });
   await handlers.dbWrite({ target_id: "dev-main", sql: WRITE_SQL });
@@ -158,4 +173,17 @@ test("db_read and db_write: a failed query logs db.query_failed with the sql_has
   }
   assert.notEqual(failures[0].payload.sql_hash, failures[1].payload.sql_hash);
   assert.equal(stdout.lines.join("").includes("01234567890"), false);
+});
+
+test("db_read and db_write: by default the full sql text is logged on query_out and query_failed, also with anonymization on", async () => {
+  const ok = createHarness("info");
+  await ok.handlers.dbRead({ target_id: "dev-main", sql: READ_SQL });
+  await ok.handlers.dbWrite({ target_id: "dev-main", sql: WRITE_SQL });
+  const outs = parse(ok.stdout).filter(entry => entry.event === "db.query_out");
+  assert.deepEqual(outs.map(entry => entry.payload.sql), [READ_SQL, WRITE_SQL]);
+
+  const ko = createHarness("info", { fail: true });
+  await ko.handlers.dbRead({ target_id: "dev-main", sql: READ_SQL });
+  const failures = parse(ko.stdout).filter(entry => entry.event === "db.query_failed");
+  assert.deepEqual(failures.map(entry => entry.payload.sql), [READ_SQL]);
 });

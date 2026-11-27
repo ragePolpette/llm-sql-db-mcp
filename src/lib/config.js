@@ -210,6 +210,9 @@ export function loadRuntimeConfig({ cwd = process.cwd(), env = process.env } = {
     },
     logLevel: parseEnum(env.LOG_LEVEL, ["error", "info", "debug"], "info", "LOG_LEVEL"),
     logFormat: parseEnum(env.LOG_FORMAT, ["json", "plain"], "json", "LOG_FORMAT"),
+    // Full statement text on db.query_out / db.query_failed, with or without anonymization.
+    // Set LOG_SQL_TEXT=false to log only the sql_hash.
+    logSqlText: parseBoolean(env.LOG_SQL_TEXT, true),
     sqlServer: {
       connectionTimeoutMs: dbConnectionTimeoutMs,
       requestTimeoutMs: dbRequestTimeoutMs,
